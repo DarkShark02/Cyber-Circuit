@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-container">
+    <div class="glass-panel" style="width: 400px; text-align: center;">
+        <h1 style="font-family: 'Orbitron'; color: #00f2ff; margin-bottom: 10px; letter-spacing: 3px;">LOGIN</h1>
+        <p style="opacity: 0.6; margin-bottom: 30px; text-transform: uppercase; font-size: 0.8em;">Accendi i motori, pilota</p>
+
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div style="color: #ff0055; margin-bottom: 15px; font-weight: bold;">{{ messages[0] }}</div>
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" style="display: flex; flex-direction: column; gap: 15px;">
+            <input type="text" name="username" placeholder="USERNAME" required 
+                   style="background: rgba(0,0,0,0.5); border: 1px solid #333; color: white; padding: 12px; border-radius: 5px; font-family: 'Rajdhani';">
+            
+            <input type="password" name="password" placeholder="PASSWORD" required 
+                   style="background: rgba(0,0,0,0.5); border: 1px solid #333; color: white; padding: 12px; border-radius: 5px; font-family: 'Rajdhani';">
+            
+            <button type="submit" class="btn" style="width: 100%; margin-top: 10px;">SFRECCIA NEL GIOCO</button>
+        </form>
+
+        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 25px 0;">
+        
+        <p style="font-size: 0.9em;">
+            Nuovo pilota? 
+            <a href="{{ url_for('register') }}" style="color: #00f2ff; text-decoration: none; font-weight: bold;">REGISTRATI QUI</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

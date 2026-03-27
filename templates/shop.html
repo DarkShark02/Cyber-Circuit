@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container" style="padding: 40px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 25px;">
+        {% for car in cars %}
+        <div class="glass-panel" style="text-align: center; transition: 0.3s; padding: 20px;">
+            <h3 style="font-family: 'Orbitron'; margin-bottom: 5px;">{{ car.name }}</h3>
+            
+            <div class="car-viewer" 
+                 id="viewer-{{ car.id }}"
+                 data-model="{{ url_for('static', filename='models/' + car.model_path) }}"
+                 style="width: 100%; height: 200px; background: radial-gradient(circle, #1a1a1a 0%, #050505 100%); border-radius: 10px; margin: 15px 0; position: relative; border: 1px solid rgba(0,242,255,0.2);">
+                <div class="loading-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: #444;">CARICAMENTO...</div>
+            </div>
+
+            <div style="margin: 15px 0; font-family: 'Rajdhani';">
+                <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 2px;">
+                    <span>VELOCITÀ</span><span>{{ car.speed }}</span>
+                </div>
+                <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 10px;">
+                    <div style="width: {{ car.speed }}%; height: 100%; background: #00f2ff; box-shadow: 0 0 8px #00f2ff;"></div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 2px;">
+                    <span>ACCELERAZIONE</span><span>{{ car.accel }}</span>
+                </div>
+                <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 10px;">
+                    <div style="width: {{ car.accel }}%; height: 100%; background: #ff0055; box-shadow: 0 0 8px #ff0055;"></div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 2px;">
+                    <span>MANEGGEVOLEZZA</span><span>{{ car.handling }}</span>
+                </div>
+                <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 10px;">
+                    <div style="width: {{ car.handling }}%; height: 100%; background: #39ff14; box-shadow: 0 0 8px #39ff14;"></div>
+                </div>
+            </div>
+
+            <h2 style="color: #39ff14; font-family: 'Orbitron'; margin-bottom: 20px;">{{ car.price }} ₿</h2>
+            
+            <form action="{{ url_for('buy_car', car_id=car.id) }}" method="POST">
+                <button type="submit" class="btn" 
+                    {% if current_user.credits < car.price %} disabled style="opacity: 0.3; cursor: not-allowed; width: 100%;" {% else %} style="width: 100%;" {% endif %}>
+                    {% if current_user.credits < car.price %} CREDITI INSUFFICIENTI {% else %} ACQUISTA {% endif %}
+                </button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% if not cars %}
+        <p style="text-align: center; opacity: 0.5; margin-top: 50px;">Hai già sbloccato tutti i modelli disponibili!</p>
+    {% endif %}
+    
+    <a href="/garage" style="display: block; text-align: center; margin-top: 30px; color: #00f2ff; text-decoration: none; font-family: 'Orbitron'; font-size: 0.8em;">← TORNA AL GARAGE</a>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+<script type="module" src="{{ url_for('static', filename='js/garage.js') }}"></script>
+
+<style>
+    .btn {
+        padding: 12px;
+        background: transparent;
+        border: 2px solid #39ff14;
+        color: #39ff14;
+        font-family: 'Orbitron';
+        cursor: pointer;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    .btn:hover:not([disabled]) {
+        background: #39ff14;
+        color: #000;
+        box-shadow: 0 0 20px #39ff14;
+    }
+</style>
+{% endblock %}

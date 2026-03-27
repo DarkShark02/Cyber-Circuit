@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>RacistGame - Speed is All</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    
+    <nav class="navbar" style="display: flex; justify-content: space-between; align-items: center; padding: 15px 40px; background: rgba(0,0,0,0.8); border-bottom: 1px solid #00f2ff;">
+        <strong style="font-family: 'Orbitron'; color: #00f2ff; font-size: 1.5em; letter-spacing: 2px;">RACIST GAME</strong>
+        
+        {% if current_user.is_authenticated %}
+        <div style="display: flex; gap: 25px; font-family: 'Orbitron'; font-size: 0.8em;">
+            <a href="{{ url_for('garage') }}" style="color: #fff; text-decoration: none; hover: color:#00f2ff;">GARAGE</a>
+            <a href="{{ url_for('shop') }}" style="color: #fff; text-decoration: none;">SHOP</a>
+            <span style="color: #ffcc00;">{{ current_user.credits }} ₿</span>
+            <a href="{{ url_for('logout') }}" style="color: #ff0055; text-decoration: none;">LOGOUT</a>
+        </div>
+        {% endif %}
+    </nav>
+
+    <div class="flash-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash-message flash-{{ category if category != 'message' else 'success' }}">
+                  {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+    </div>
+    
+    {% block content %}{% endblock %}
+
+    <script>
+        setTimeout(() => {
+            const flashes = document.querySelectorAll('.flash-message');
+            flashes.forEach(f => {
+                f.classList.add('fade-out'); // Classe CSS che aggiungeremo allo style.css
+                setTimeout(() => f.remove(), 500);
+            });
+        }, 4000); // Sparisce dopo 4 secondi
+    </script>
+</body>
+</html>

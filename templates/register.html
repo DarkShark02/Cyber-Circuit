@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-container">
+    <div class="glass-panel" style="width: 400px; text-align: center; border-color: #ff0055;">
+        <h1 style="font-family: 'Orbitron'; color: #ff0055; margin-bottom: 10px; letter-spacing: 3px;">JOIN THE RACE</h1>
+        <p style="opacity: 0.6; margin-bottom: 30px; text-transform: uppercase; font-size: 0.8em;">Crea il tuo profilo e ottieni la prima auto</p>
+
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div style="color: #ff0055; margin-bottom: 15px;">{{ messages[0] }}</div>
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" style="display: flex; flex-direction: column; gap: 15px;">
+            <input type="text" name="username" placeholder="SCEGLI USERNAME" required 
+                   style="background: rgba(0,0,0,0.5); border: 1px solid #333; color: white; padding: 12px; border-radius: 5px; font-family: 'Rajdhani';">
+            
+            <input type="password" name="password" placeholder="SCEGLI PASSWORD" required 
+                   style="background: rgba(0,0,0,0.5); border: 1px solid #333; color: white; padding: 12px; border-radius: 5px; font-family: 'Rajdhani';">
+            
+            <button type="submit" class="btn" style="width: 100%; margin-top: 10px; background: linear-gradient(45deg, #ff0055, #8800ff);">CREA ACCOUNT</button>
+        </form>
+
+        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 25px 0;">
+        
+        <p style="font-size: 0.9em;">
+            Hai già un account? 
+            <a href="{{ url_for('login') }}" style="color: #ff0055; text-decoration: none; font-weight: bold;">ACCEDI</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

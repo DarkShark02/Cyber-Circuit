@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display: flex; height: auto; width: 100vw; padding: 10px; box-sizing: border-box; gap: 10px; overflow: hidden; background: #000; font-family: 'Orbitron', sans-serif;">
+    
+    <div class="glass-panel" style="width: 280px; display: flex; flex-direction: column; padding: 20px; background: rgba(15,15,15,0.9); border: 1px solid rgba(0,242,255,0.3); border-radius: 10px; height: 100%; gap: 20px;">   
+        <div>
+            <h2 style="color: #00f2ff; margin: 0; font-size: 1.4em; text-shadow: 0 0 10px #00f2ff;">GARAGE</h2>
+            <p style="opacity: 0.5; margin: 5px 0 20px 0; font-size: 0.7em; letter-spacing: 1px;">PILOTA: {{ current_user.username }}</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <label style="font-size: 0.65em; color: #00f2ff; display: block; margin: 25px 0 10px 0; letter-spacing: 1px; font-weight: bold;"><span>{{ car_info.name }}</span></label>
+                <div>
+                    <div class="stat-label"><span>VELOCITÀ</span><span>{{ car_info.speed }}%</span></div>
+                    <div class="stat-bar"><div class="stat-fill" style="width: {{ car_info.speed }}%;"></div></div>
+                </div>
+                <div>
+                    <div class="stat-label"><span>ACCELERAZIONE</span><span>{{ car_info.accel }}%</span></div>
+                    <div class="stat-bar"><div class="stat-fill" style="width: {{ car_info.accel }}%;"></div></div>
+                </div>
+                <div>
+                    <div class="stat-label"><span>MANEGGEVOLEZZA</span><span>{{ car_info.handling }}%</span></div>
+                    <div class="stat-bar"><div class="stat-fill" style="width: {{ car_info.handling }}%;"></div></div>
+                </div>
+            </div>
+
+            <label style="font-size: 0.65em; color: #00f2ff; display: block; margin: 25px 0 10px 0; letter-spacing: 1px; font-weight: bold;">VERNICIATURA</label>
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
+                {% set colors = [
+                    ['#00f2ff', 'linear-gradient(135deg, #00f2ff, #0066ff)'],
+                    ['#ff0055', 'linear-gradient(135deg, #ff0055, #880022)'],
+                    ['#39ff14', 'linear-gradient(135deg, #39ff14, #008800)'],
+                    ['#ffff00', 'linear-gradient(135deg, #ffff00, #ff8800)'],
+                    ['#8a2be2', 'linear-gradient(135deg, #8a2be2, #440088)'],
+                    ['#ffffff', 'linear-gradient(135deg, #ffffff, #888888)'],
+                    ['#ff8c00', 'linear-gradient(135deg, #ff8c00, #ff4400)'],
+                    ['#00ff7f', 'linear-gradient(135deg, #00ff7f, #008844)'],
+                    ['#ff00ff', 'linear-gradient(135deg, #ff00ff, #880088)'],
+                    ['#4d4d4d', 'linear-gradient(135deg, #4d4d4d, #000000)']
+                ] %}
+                {% for hex, grad in colors %}
+                <div onclick="applyCarColor('{{ hex }}')" 
+                    class="color-dot" 
+                    style="background: {{ grad }}; box-shadow: 0 0 10px {{ hex }}44;">
+                </div>
+                {% endfor %}
+            </div>
+            <input type="hidden" id="selectedColor" value="{{ user_car.color }}">
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <button id="saveBtn" class="btn-main">SALVA CONFIGURAZIONE</button>
+            <a href="/race" class="btn-main" style="background: #39ff14; color: #000; text-align: center; text-decoration: none; border-color: #39ff14;">ENTRA IN GARA</a>
+        </div>
+
+    </div>
+
+    <div style="flex-grow: 1; position: relative; background: radial-gradient(circle, #1a1a1a 0%, #000 100%); border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+        {% if all_cars|length > 1 %}
+        <div style="position: absolute; top: 50%; width: 100%; display: flex; justify-content: space-between; padding: 0 5px; transform: translateY(-50%); z-index: 100; pointer-events: none;">
+            <button class="nav-arrow" onclick="changeCar(-1)" style="pointer-events: auto;">&#10094;</button>
+            <button class="nav-arrow" onclick="changeCar(1)" style="pointer-events: auto;">&#10095;</button>
+        </div>
+        {% endif %}
+
+        <div id="canvas-container" class="car-viewer" 
+             data-model="{{ url_for('static', filename='models/' + model_file) }}"
+             style="width: 100%; height: 100%;">
+            <div class="loading-text" style="position: absolute; top: 50%; left: 50%; color: #00f2ff; transform: translate(-50%, -50%); font-size: 0.9em; letter-spacing: 2px;">SINCRONIZZAZIONE...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stat-label { display: flex; justify-content: space-between; font-size: 0.6em; color: #888; margin-bottom: 4px; letter-spacing: 1px; }
+    .stat-bar { background: rgba(255,255,255,0.05); height: 4px; border-radius: 2px; overflow: hidden; }
+    .stat-fill { background: #00f2ff; height: 100%; box-shadow: 0 0 10px #00f2ff; transition: width 0.5s ease; }
+    
+    .color-dot { height: 22px; border-radius: 4px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: 0.2s; }
+    .color-dot:hover { transform: scale(1.1); border-color: white; }
+
+    .btn-main { 
+        padding: 12px; 
+        border: 2px solid #00f2ff; 
+        background: transparent; 
+        color: #00f2ff; 
+        font-family: 'Orbitron'; 
+        font-weight: bold; 
+        cursor: pointer; 
+        font-size: 0.8em; 
+        transition: 0.3s;
+        border-radius: 5px;
+    }
+    .btn-main:hover { background: #00f2ff; color: #000; box-shadow: 0 0 15px #00f2ff; }
+
+    .nav-arrow { 
+        background: rgba(0,0,0,0.6); 
+        border: 1px solid #00f2ff; 
+        color: #00f2ff; 
+        width: 45px; 
+        height: 45px; 
+        cursor: pointer; 
+        border-radius: 50%; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+        font-size: 1.5em;
+        transition: 0.3s;
+    }
+    .nav-arrow:hover { background: #00f2ff; color: #000; }
+</style>
+
+<script>
+    const carIds = [{% for uc, catalog in all_cars %}{{ uc.id }}{% if not loop.last %},{% endif %}{% endfor %}];
+    let currentCarId = {{ user_car.id }};
+    function changeCar(direction) {
+        let currentIndex = carIds.indexOf(currentCarId);
+        let nextIndex = (currentIndex + direction + carIds.length) % carIds.length;
+        window.location.href = "?select_car=" + carIds[nextIndex];
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', function() {
+        const selectedColor = document.getElementById('selectedColor').value;
+        const carId = currentCarId;
+
+        fetch('/save_car_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ car_id: carId, color: selectedColor })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showJsFlash("Configurazione salvata con successo!", "success");
+            } else {
+                showJsFlash("Errore nel salvataggio.", "danger");
+            }
+        });
+    });
+
+    // Funzione per creare un messaggio flash senza ricaricare la pagina
+    function showJsFlash(message, category) {
+        const container = document.querySelector('.flash-container');
+        const msg = document.createElement('div');
+        msg.className = `flash-message flash-${category}`;
+        msg.innerText = message;
+        
+        container.appendChild(msg);
+
+        // Rimuovi dopo 4 secondi (stessa logica del base.html)
+        setTimeout(() => {
+            msg.classList.add('fade-out');
+            setTimeout(() => msg.remove(), 500);
+        }, 4000);
+    }
+</script>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+
+</script>
+<script type="module" src="{{ url_for('static', filename='js/garage.js') }}"></script>
+{% endblock %}

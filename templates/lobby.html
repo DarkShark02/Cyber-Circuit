@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="lobby-container cyberpunk-card" style="max-width: 900px; margin: 20px auto; padding: 20px; border: 1px solid #00f2ff; background: rgba(0,0,0,0.9);">
+    <h2 style="font-family: 'Orbitron'; color: #00f2ff;">Lobby: <span class="neon-text" id="lobby-code">{{ lobby.code }}</span></h2>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div>
+            <div class="players-list panel-section" style="margin-bottom: 20px;">
+                <h3 style="color: #39ff14; font-size: 0.9em;">PILOTI IN GRIGLIA:</h3>
+                <ul id="player-ul" style="list-style: none; padding: 0;">
+                    {% for player in lobby.players %}
+                        <li id="player-li-{{ player.id }}" style="color: #fff; padding: 5px 0; border-bottom: 1px solid #333;">
+                            {{ player.username }} {% if player.id == lobby.host_id %} <span style="color: #ff0055;">(HOST)</span> {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <div class="invite-section panel-section">
+                <h3 style="color: #00f2ff; font-size: 0.9em;">RECLUTA CREW (AMICI):</h3>
+                <div id="friends-to-invite">
+                    {% for friend in friends %}
+                        {% set player_ids = lobby.players | map(attribute='id') | list %}
+                        <div id="friend-row-{{ friend.id }}" 
+                             style="display: {% if friend.id in player_ids %}none{% else %}flex{% endif %}; 
+                                    justify-content: space-between; align-items: center; margin-bottom: 8px; 
+                                    background: rgba(255,255,255,0.05); padding: 5px 10px;">
+                            <span style="color: #bbb; font-size: 0.8em;">{{ friend.username }}</span>
+                            <button onclick="inviteFriend({{ friend.id }})" class="btn-small" style="background: #00f2ff; color: #000; border: none; padding: 2px 8px; font-size: 0.7em; font-family: 'Orbitron';">INVITA</button>
+                        </div>
+                    {% else %}
+                        <p style="color: #555; font-size: 0.7em;">Nessun alleato disponibile.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="track-selection">
+            <h3 style="color: #ff0055; font-size: 0.9em;">SELEZIONE CIRCUITO:</h3>
+            <div class="track-grid" style="display: grid; gap: 10px;">
+                {% for track in tracks %}
+                <div id="track-{{ track.id }}" 
+                     class="track-card {% if lobby.track_id == track.id %}selected{% endif %}" 
+                     onclick="selectTrack({{ lobby.id }}, {{ track.id }})"
+                     style="border: 1px solid #333; padding: 10px; cursor: pointer;">
+                    <h4 style="margin: 0; color: #fff;">{{ track.name }}</h4>
+                    <p style="margin: 0; font-size: 0.7em; color: #888;">Difficoltà: {{ track.difficulty }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            
+            {% if current_user.id == lobby.host_id %}
+            <button onclick="startRace({{ lobby.id }})" class="btn-cyber-main" id="btn-start" 
+                    style="{% if not lobby.track_id %}opacity: 0.4; cursor: not-allowed;{% endif %}"
+                    {% if not lobby.track_id %}disabled{% endif %}>
+                <span class="btn-content">AVVIA MOTORI</span>
+                <span class="btn-glitch"></span>
+            </button>
+            {% else %}
+            <div class="waiting-area" style="margin-top: 20px; text-align: center;">
+                <p class="blink" style="color: #ff0055; font-size: 0.8em;">IN ATTESA DELL'HOST...</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    .panel-section { background: rgba(255,255,255,0.02); padding: 15px; border-radius: 5px; }
+    .track-card.selected { border-color: #00f2ff !important; background: rgba(0, 242, 255, 0.1); box-shadow: 0 0 10px #00f2ff; }
+    .blink { animation: blinker 1.5s linear infinite; }
+    .btn-cyber-main {
+        margin-top: 20px;
+        width: 100%;
+        padding: 15px;
+        background: transparent;
+        border: 2px solid #39ff14;
+        color: #39ff14;
+        font-family: 'Orbitron', sans-serif;
+        font-weight: bold;
+        letter-spacing: 3px;
+        position: relative;
+        cursor: pointer;
+        transition: 0.3s;
+        overflow: hidden;
+        text-transform: uppercase;
+    }
+    .btn-cyber-main:hover:not([disabled]) {
+        background: #39ff14;
+        color: #000;
+        box-shadow: 0 0 20px rgba(57, 255, 20, 0.6);
+    }
+
+    .btn-cyber-main:disabled {
+        border-color: #333;
+        color: #555;
+    }
+    @keyframes blinker { 50% { opacity: 0; } }
+</style>
+
+<script>
+const lobbyCode = "{{ lobby.code }}";
+
+document.addEventListener('DOMContentLoaded', () => {
+    socket.emit('join_lobby', { code: lobbyCode });
+
+    socket.on('player_joined', function(data) {
+        // Aggiungi alla lista piloti
+        const ul = document.getElementById('player-ul');
+        if (!document.getElementById(`player-li-${data.user_id}`)) {
+            const li = document.createElement('li');
+            li.id = `player-li-${data.user_id}`;
+            li.style = "color: #fff; padding: 5px 0; border-bottom: 1px solid #333;";
+            li.innerHTML = `${data.username} <span style="color: #39ff14; font-size: 0.7em;">[ONLINE]</span>`;
+            ul.appendChild(li);
+        }
+        // Nascondi dai possibili invitabili
+        const row = document.getElementById(`friend-row-${data.user_id}`);
+        if (row) row.style.display = 'none';
+    });
+
+    socket.on('player_left', function(data) {
+        const li = document.getElementById(`player-li-${data.user_id}`);
+        if (li) li.remove();
+        const row = document.getElementById(`friend-row-${data.user_id}`);
+        if (row) row.style.display = 'flex';
+    });
+
+    socket.on('lobby_closed', function(data) {
+        showJsFlash(data.message, "error");
+        setTimeout(() => window.location.href = "/garage", 2000);
+    });
+
+    socket.on('track_updated', function(data) {
+        document.querySelectorAll('.track-card').forEach(c => c.classList.remove('selected'));
+        const target = document.getElementById('track-' + data.track_id);
+        if(target) target.classList.add('selected');
+        const btn = document.getElementById('btn-start');
+        if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.style.cursor = "pointer"; }
+    });
+
+    // Ricevi il segnale di inizio gara dal server
+    socket.on('redirect_to_race', function(data) {
+        showJsFlash("SINCRONIZZAZIONE MOTORI IN CORSO...", "success");
+        setTimeout(() => {
+            window.location.href = data.url;
+        }, 1000);
+    });
+});
+
+function selectTrack(lId, tId) {
+    {% if current_user.id == lobby.host_id %}
+    fetch(`/select_track/${lId}/${tId}`, { method: 'POST' })
+    .then(r => r.json()).then(data => {
+        if(data.status === "success") socket.emit('change_track', { code: lobbyCode, track_id: tId });
+    });
+    {% endif %}
+}
+
+function inviteFriend(fId) {
+    socket.emit('send_lobby_invite', { friend_id: fId, lobby_code: lobbyCode });
+    showJsFlash("INVITO INVIATO", "success");
+}
+
+function startRace(lId) {
+    const btn = document.getElementById('btn-start');
+    btn.disabled = true; // Disabilita subito per evitare doppie chiamate
+    btn.innerText = "CARICAMENTO...";
+    window.location.href = "/race/start/" + lId;
+}
+</script>
+{% endblock %}

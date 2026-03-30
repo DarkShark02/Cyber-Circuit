@@ -1,17 +1,90 @@
 {% extends "base.html" %}
 {% block content %}
-<body data-car-color="{{ current_user.owned_cars[0].color if current_user.owned_cars else '#ff2e2e' }}">
-    <div id="ui-overlay" style="position: absolute; top: 20px; left: 20px; color: white; z-index: 100; font-family: 'Orbitron';">
-        <h2 id="speedometer">0 KM/H</h2>
-        <p>Pilota: {{ current_user.username }}</p>
+<style>
+body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
+
+#game-hud {
+    position: fixed; top:0; left:0; width:100vw; height:100vh;
+    pointer-events:none; z-index:10; font-family:'Orbitron', sans-serif;
+}
+
+.top-left-hud { position:absolute; top:85px; left:20px; border-left:3px solid #39ff14; padding-left:12px; }
+
+.stats-panel {
+    position:absolute; top:85px; right:20px;
+    background:rgba(0,0,0,0.6);
+    border:1px solid rgba(57,255,20,0.3);
+    padding:8px; font-size:0.65em; color:#39ff14;
+}
+
+.mini-label { font-size:0.55em; color:#00f2ff; text-transform:uppercase; }
+
+#speed-container { position:absolute; bottom:30px; left:30px; }
+#speed-val { font-size:2.2em; font-weight:900; color:#fff; text-shadow:0 0 15px #39ff14; }
+
+#minimap-container {
+    position:absolute; bottom:30px; right:30px;
+    width:100px; height:100px;
+    border:1px solid rgba(57,255,20,0.4);
+    border-radius:10px;
+}
+
+#loading-overlay {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:#000; display:flex; justify-content:center; align-items:center;
+    color:#39ff14; z-index:100;
+}
+</style>
+
+<div id="loading-overlay">INIZIALIZZAZIONE...</div>
+
+<div id="game-hud">
+    <div class="top-left-hud">
+        <div class="mini-label">DRIVER</div>
+        <div style="color:#fff;">{{ current_user.username }}</div>
+        <div class="mini-label">CAR</div>
+        <div style="color:#00f2ff;">{{ user_car.car.name }}</div>
     </div>
 
-    <div id="game-container" style="width: 100vw; height: 100vh; overflow: hidden;"></div>
+    <div class="stats-panel">
+        SPD: {{ user_car.car.speed }} |
+        ACC: {{ user_car.car.accel }} |
+        HAN: {{ user_car.car.handling }}
+    </div>
 
-    <script type="importmap">
-        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
-    </script>
-    <script type="module" src="{{ url_for('static', filename='js/race.js') }}"></script>
-</body>
+    <div id="speed-container">
+        <div class="mini-label">KM/H</div>
+        <div id="speed-val">0</div>
+    </div>
+
+    <div id="minimap-container">
+        <canvas id="minimap-canvas" width="100" height="100"></canvas>
+    </div>
+</div>
+
+<div id="canvas-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<script type="module">
+    import { initGame } from '/static/js/race.js';
+
+    // Inizializziamo il socket qui
+    const socket = io();
+
+    initGame({
+        socket: socket, // Passiamo il socket al gioco
+        username: "{{ current_user.username }}",
+        stats: {
+            speed: parseFloat("{{ user_car.car.speed }}") || 50,
+            accel: parseFloat("{{ user_car.car.accel }}") || 50,
+            handling: parseFloat("{{ user_car.car.handling }}") || 50
+        },
+        modelPath: "/static/models/{{ user_car.car.model_path }}",
+        carColor: "{{ user_car.color }}" || "#39ff14"
+    });
+</script>
 {% endblock %}

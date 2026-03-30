@@ -15,11 +15,27 @@
         <div style="display: flex; gap: 25px; font-family: 'Orbitron'; font-size: 0.8em;">
             <a href="{{ url_for('garage') }}" style="color: #fff; text-decoration: none; hover: color:#00f2ff;">GARAGE</a>
             <a href="{{ url_for('shop') }}" style="color: #fff; text-decoration: none;">SHOP</a>
+            <a href="{{ url_for('social_page') }}" style="color: #fff; text-decoration: none;">FRIENDS</a>
+            <a href="#" id="invite-notification" style="display: none; color: #ff0055; text-decoration: none; border: 1px solid #ff0055; padding: 2px 8px; border-radius: 4px; margin-right: 10px;">
+                <span class="blink-anim">⚠ SFIDA</span>
+                <span id="invite-count" style="margin-left: 5px; background: #ff0055; color: #fff; padding: 0 5px; border-radius: 50%; font-size: 0.9em;">0</span>
+            </a>
             <span style="color: #ffcc00;">{{ current_user.credits }} ₿</span>
             <a href="{{ url_for('logout') }}" style="color: #ff0055; text-decoration: none;">LOGOUT</a>
         </div>
         {% endif %}
     </nav>
+
+    <div id="cyber-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content cyberpunk-card">
+            <h3 id="modal-title" style="color: #ff0055; font-family: 'Orbitron';">RILEVATA SFIDA</h3>
+            <p id="modal-body" style="color: #fff; font-family: 'Rajdhani';"></p>
+            <div style="display: flex; gap: 20px; justify-content: center; margin-top: 20px;">
+                <button id="modal-accept" class="btn-small" style="background: #39ff14;">ACCETTA</button>
+                <button id="modal-decline" class="btn-small" style="background: #ff0055;">RIFIUTA</button>
+            </div>
+        </div>
+    </div>
 
     <div class="flash-container">
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -35,14 +51,130 @@
     
     {% block content %}{% endblock %}
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+
     <script>
-        setTimeout(() => {
+        // Inizializzazione UNICA del socket per tutte le pagine
+        const socket = io();
+        let activeInvites = [];
+
+        function showJsFlash(message, category = 'success') {
+            const container = document.querySelector('.flash-container');
+            if(!container) return;
+            const msg = document.createElement('div');
+            msg.className = `flash-message flash-${category}`;
+            msg.innerText = message;
+            container.appendChild(msg);
+
+            setTimeout(() => {
+                msg.classList.add('fade-out');
+                setTimeout(() => msg.remove(), 500);
+            }, 4000);
+        }
+
+        // Ascolto globale degli inviti
+        socket.on('receive_invite', function(data) {
+            console.log("Notifica ricevuta:", data);
+            
+            // Verifica se l'invito è già presente per evitare duplicati
+            if (!activeInvites.find(i => i.lobby_code === data.lobby_code)) {
+                activeInvites.push(data);
+                updateInviteBadge();
+                showJsFlash(`NUOVA SFIDA DA ${data.host_name.toUpperCase()}`, "success");
+            }
+        });
+
+        function updateInviteBadge() {
+            const badge = document.getElementById('invite-notification');
+            const modal = document.getElementById('cyber-modal');
+
+            if (activeInvites.length > 0) {
+                badge.style.setProperty('display', 'inline-flex', 'important');
+                document.getElementById('invite-count').innerText = activeInvites.length;
+
+                badge.onclick = (e) => {
+                    e.preventDefault();
+                    const lastInvite = activeInvites[activeInvites.length - 1];
+                    
+                    // Setup Modal
+                    document.getElementById('modal-body').innerText = `Il pilota ${lastInvite.host_name.toUpperCase()} ti sfida in pista. Accetti il duello?`;
+                    modal.style.display = 'flex';
+
+                    document.getElementById('modal-accept').onclick = () => {
+                        window.location.href = `/lobby/${lastInvite.lobby_code}`;
+                    };
+                    
+                    document.getElementById('modal-decline').onclick = () => {
+                        modal.style.display = 'none';
+                        activeInvites.pop(); // Rimuove l'invito rifiutato
+                        updateInviteBadge();
+                    };
+                };
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        // Pulizia flash iniziali
+        document.addEventListener('DOMContentLoaded', () => {
             const flashes = document.querySelectorAll('.flash-message');
             flashes.forEach(f => {
-                f.classList.add('fade-out'); // Classe CSS che aggiungeremo allo style.css
-                setTimeout(() => f.remove(), 500);
+                setTimeout(() => {
+                    f.classList.add('fade-out');
+                    setTimeout(() => f.remove(), 500);
+                }, 4000);
             });
-        }, 4000); // Sparisce dopo 4 secondi
+        });
     </script>
+
+    <style>
+        #invite-notification {
+            display: none; /* Gestito dal JS */
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 0, 85, 0.15);
+            border: 1px solid #ff0055;
+            padding: 4px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: 0.3s;
+        }
+
+        #invite-count {
+            background: #ff0055;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 7px;
+            font-size: 0.8em;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: bold;
+            box-shadow: 0 0 8px #ff0055;
+        }
+
+        .blink-anim {
+            animation: cyber-blink 1s steps(2) infinite;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10000;
+        }
+        .modal-content {
+            background: #000;
+            border: 2px solid #ff0055;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 0 20px #ff0055;
+            max-width: 400px;
+        }
+
+        @keyframes cyber-blink {
+            from { opacity: 1; text-shadow: 0 0 10px #ff0055; }
+            to { opacity: 0.3; text-shadow: none; }
+        }
+    </style>
 </body>
 </html>

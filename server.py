@@ -1,11 +1,16 @@
 import os
+import uuid
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import or_
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from flask_socketio import SocketIO, emit
-from models import db, User, CarCatalog, UserCar
-from init_db import setup_catalog
+from flask_socketio import SocketIO, emit, join_room, leave_room
+import threading
+import time
+
+from models import db, User, CarCatalog, UserCar, Friendship, Track, Lobby
+from init_db import setup_db
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'neon_speed_secret_2026'
@@ -13,7 +18,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///racist_game.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
-setup_catalog(app)
+setup_db(app)
 bcrypt = Bcrypt(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -24,7 +29,7 @@ login_manager.login_view = 'login'
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- ROTTE HTTP ---
+# --- ROTTE AUTH & GARAGE ---
 
 @app.route('/')
 def home():
@@ -40,11 +45,11 @@ def register():
             return redirect(url_for('register'))
         
         hashed_pwd = bcrypt.generate_password_hash(pwd).decode('utf-8')
-        new_user = User(username=user, password=hashed_pwd, credits=100) # Soldi iniziali
+        new_user = User(username=user, password=hashed_pwd, credits=100)
         db.session.add(new_user)
         db.session.commit()
         
-        # Regalo auto iniziale (PUNTO è la ID 1)
+        # Auto iniziale
         car = UserCar(user_id=new_user.id, catalog_id=1, color="#00f2ff")
         db.session.add(car)
         db.session.commit()
@@ -63,35 +68,34 @@ def login():
         flash('Credenziali errate!', 'error')
     return render_template('login.html')
 
+@app.route('/logout')
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
 @app.route('/garage')
 @login_required
 def garage():
+    # Se l'utente entra in garage, resettiamo la sua lobby_id
+    if current_user.lobby_id:
+        current_user.lobby_id = None
+        db.session.commit()
+
     car_id = request.args.get('select_car', type=int)
-    # JOIN per avere dati dell'auto e del catalogo insieme
     user_cars = db.session.query(UserCar, CarCatalog).join(CarCatalog).filter(UserCar.user_id == current_user.id).all()
     
-    if car_id:
-        # Cerchiamo la specifica auto posseduta tra quelle dell'utente
-        active_pair = next((p for p in user_cars if p.UserCar.id == car_id), user_cars[0] if user_cars else None)
-    else:
-        active_pair = user_cars[0] if user_cars else None
-
+    active_pair = next((p for p in user_cars if p.UserCar.id == car_id), user_cars[0] if user_cars else None)
     active_car = active_pair.UserCar if active_pair else None
     car_info = active_pair.CarCatalog if active_pair else None
-    model_file = car_info.model_path if car_info else 'auto.glb'
     
-    return render_template('garage.html', 
-                           user_car=active_car, 
-                           car_info=car_info, 
-                           all_cars=user_cars,
-                           model_file=model_file)
+    return render_template('garage.html', user_car=active_car, car_info=car_info, all_cars=user_cars, model_file=car_info.model_path if car_info else 'auto.glb')
+
+# --- SHOP & CONFIG ---
 
 @app.route('/shop')
 @login_required
 def shop():
-    # Trova ID delle auto già possedute
     owned_ids = [c.catalog_id for c in UserCar.query.filter_by(user_id=current_user.id).all()]
-    # Mostra solo quelle che mancano
     available_cars = CarCatalog.query.filter(~CarCatalog.id.in_(owned_ids)).all()
     return render_template('shop.html', cars=available_cars)
 
@@ -100,50 +104,187 @@ def shop():
 def buy_car(car_id):
     car_to_buy = CarCatalog.query.get_or_404(car_id)
     if current_user.credits >= car_to_buy.price:
-        try:
-            new_car = UserCar(user_id=current_user.id, catalog_id=car_to_buy.id)
-            current_user.credits -= car_to_buy.price
-            db.session.add(new_car)
-            db.session.commit()
-            flash(f"Unità {car_to_buy.name} acquisita!", "success")
-        except:
-            db.session.rollback()
-            flash("Sistema: Unità già presente nel database utente.", "error")
+        new_car = UserCar(user_id=current_user.id, catalog_id=car_to_buy.id)
+        current_user.credits -= car_to_buy.price
+        db.session.add(new_car)
+        db.session.commit()
+        flash(f"Unità {car_to_buy.name} acquisita!", "success")
     else:
-        flash("Crediti insufficienti per l'acquisizione.", "error")
+        flash("Crediti insufficienti.", "error")
     return redirect(url_for('shop'))
 
 @app.route('/save_car_config', methods=['POST'])
 @login_required
 def save_car_config():
     data = request.get_json()
-    car_id = data.get('car_id')
-    new_color = data.get('color')
-    
-    user_car = UserCar.query.filter_by(id=car_id, user_id=current_user.id).first()
+    user_car = UserCar.query.filter_by(id=data.get('car_id'), user_id=current_user.id).first()
     if user_car:
-        user_car.color = new_color
+        user_car.color = data.get('color')
         db.session.commit()
         return jsonify({'success': True})
-    
     return jsonify({'success': False}), 400
 
-@app.route('/race')
-@login_required
-def race():
-    return render_template('race.html')
+# --- SOCIAL ---
 
-@app.route('/logout')
-def logout():
-    logout_user()
-    return redirect(url_for('login'))
+@app.route('/social')
+@login_required
+def social_page():
+    friendships = Friendship.query.filter(
+        ((Friendship.user_id == current_user.id) | (Friendship.friend_id == current_user.id)),
+        Friendship.status == 'accepted'
+    ).all()
+    friend_list = [User.query.get(f.friend_id if f.user_id == current_user.id else f.user_id) for f in friendships]
+    pending = User.query.join(Friendship, Friendship.user_id == User.id).filter(Friendship.friend_id == current_user.id, Friendship.status == 'pending').all()
+    return render_template('social.html', friends=friend_list, pending=pending)
+
+@app.route('/search_players')
+@login_required
+def search_players():
+    query = request.args.get('q', '').strip()
+    if not query: return jsonify([])
+    users = User.query.filter(User.username.ilike(f"%{query}%"), User.id != current_user.id).limit(10).all()
+    return jsonify([{"id": u.id, "username": u.username} for u in users])
+
+@app.route('/send_friend_request/<int:friend_id>', methods=['POST'])
+@login_required
+def send_request(friend_id):
+    if friend_id == current_user.id: return jsonify({"success": False, "message": "Errore auto-reclutamento."})
+    existing = Friendship.query.filter(or_((Friendship.user_id==current_user.id)&(Friendship.friend_id==friend_id),(Friendship.user_id==friend_id)&(Friendship.friend_id==current_user.id))).first()
+    if not existing:
+        db.session.add(Friendship(user_id=current_user.id, friend_id=friend_id))
+        db.session.commit()
+        return jsonify({"success": True, "message": "Richiesta inviata."})
+    return jsonify({"success": False, "message": "Relazione già esistente."})
+
+@app.route('/accept_friend/<int:user_id>', methods=['POST'])
+@login_required
+def accept_friend(user_id):
+    f = Friendship.query.filter_by(user_id=user_id, friend_id=current_user.id, status='pending').first()
+    if f:
+        f.status = 'accepted'
+        db.session.commit()
+        flash('Nuovo alleato in crew!', 'success')
+    return redirect(url_for('social_page'))
+
+# --- LOBBY SYSTEM ---
+
+@app.route('/create_lobby')
+@login_required
+def create_lobby():
+    # Elimina eventuali vecchie lobby dell'host per pulizia
+    Lobby.query.filter_by(host_id=current_user.id).delete()
+    
+    code = str(uuid.uuid4())[:6].upper()
+    new_lobby = Lobby(code=code, host_id=current_user.id)
+    db.session.add(new_lobby)
+    db.session.commit()
+    
+    current_user.lobby_id = new_lobby.id 
+    db.session.commit()
+    return redirect(url_for('view_lobby', code=code))
+
+@app.route('/lobby/<code>')
+@login_required
+def view_lobby(code):
+    lobby = Lobby.query.filter_by(code=code).first_or_404()
+    current_user.lobby_id = lobby.id # Assicura che l'utente sia collegato alla lobby
+    db.session.commit()
+
+    tracks = Track.query.all()
+    friendships = Friendship.query.filter(((Friendship.user_id == current_user.id) | (Friendship.friend_id == current_user.id)), Friendship.status == 'accepted').all()
+    friend_list = [User.query.get(f.friend_id if f.user_id == current_user.id else f.user_id) for f in friendships]
+    
+    return render_template('lobby.html', lobby=lobby, tracks=tracks, friends=friend_list)
+
+@app.route('/select_track/<int:lobby_id>/<int:track_id>', methods=['POST'])
+@login_required
+def select_track(lobby_id, track_id):
+    # Nuovo metodo SQLAlchemy 2.0
+    lobby = db.session.get(Lobby, lobby_id) 
+    
+    if lobby and lobby.host_id == current_user.id:
+        lobby.track_id = track_id
+        db.session.commit()
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 403
 
 # --- SOCKET.IO ---
+
+@socketio.on('connect')
+def handle_connect():
+    if current_user.is_authenticated:
+        join_room(f"user_{current_user.id}")
+
+@socketio.on('join_lobby')
+def handle_join(data):
+    lobby_code = data['code']
+    join_room(lobby_code)
+    emit('player_joined', {'username': current_user.username, 'user_id': current_user.id}, room=lobby_code)
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    if current_user.is_authenticated:
+        lobby = Lobby.query.filter_by(host_id=current_user.id).first()
+        
+        if lobby and not lobby.is_started:
+            # Avviamo un timer in un thread separato
+            # Se dopo 5 secondi l'host non è ancora "is_started", cancelliamo
+            def delayed_cleanup(app_context, lobby_id):
+                with app_context:
+                    time.sleep(5)  # Aspetta 5 secondi
+                    l = Lobby.query.get(lobby_id)
+                    if l and not l.is_started:
+                        db.session.delete(l)
+                        db.session.commit()
+                        print(f"[SISTEMA] Lobby {l.code} rimossa per inattività host.")
+
+            # Passiamo l'app_context per permettere al thread di usare il DB
+            from flask import current_app
+            thread = threading.Thread(target=delayed_cleanup, args=(current_app.app_context(), lobby.id))
+            thread.start()
+
+@socketio.on('send_lobby_invite')
+def handle_invite(data):
+    emit('receive_invite', {'host_name': current_user.username, 'lobby_code': data['lobby_code']}, room=f"user_{data['friend_id']}")
+
+@socketio.on('change_track')
+def handle_track(data):
+    emit('track_updated', {'track_id': data['track_id']}, room=data['code'])
+
 @socketio.on('update_position')
 def handle_position(data):
-    data['user_id'] = current_user.id
-    data['username'] = current_user.username
+    data.update({'user_id': current_user.id, 'username': current_user.username})
     emit('player_moved', data, broadcast=True, include_self=False)
+
+# --- RACE SYSTEM ---
+
+@app.route('/race/start/<int:lobby_id>')
+@login_required
+def start_race_logic(lobby_id):
+    lobby = db.session.get(Lobby, lobby_id)
+    
+    if not lobby:
+        return "Lobby non trovata", 404
+
+    if current_user.id == lobby.host_id:
+        lobby.is_started = True  # <--- QUESTO FERMA IL TIMER DI ELIMINAZIONE
+        db.session.commit()
+        
+        socketio.emit('redirect_to_race', {
+            'url': url_for('race_screen', code=lobby.code)
+        }, room=lobby.code)
+        
+        return redirect(url_for('race_screen', code=lobby.code))
+    
+    return "Non autorizzato", 403
+
+@app.route('/race/<code>')
+@login_required
+def race_screen(code):
+    lobby = Lobby.query.filter_by(code=code).first_or_404()
+    # Recuperiamo l'auto attiva dell'utente per caricarla nel gioco 3D
+    user_car = UserCar.query.filter_by(user_id=current_user.id).first() 
+    return render_template('race.html', lobby=lobby, user_car=user_car)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)

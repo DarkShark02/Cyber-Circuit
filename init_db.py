@@ -1,6 +1,6 @@
-from models import db, CarCatalog
+from models import db, CarCatalog, Track
 
-def setup_catalog(app):
+def setup_db(app):
     with app.app_context():
         db.create_all()
         # Controlla se il catalogo è già popolato
@@ -27,3 +27,14 @@ def setup_catalog(app):
             db.session.add_all(cars)
             db.session.commit()
             print("✅ Catalogo aggiornato con successo!")
+
+    with app.app_context():
+        if not Track.query.first():
+            piste = [
+                Track(name="Neon City Circuit", difficulty="Facile", model_path="track_easy.glb", reward_multiplier=1.0),
+                Track(name="Cyber Canyon", difficulty="Media", model_path="track_medium.glb", reward_multiplier=1.5),
+                Track(name="The Abyss", difficulty="Difficile", model_path="track_hard.glb", reward_multiplier=2.5)
+            ]
+            db.session.add_all(piste)
+            db.session.commit()
+            print("✅ Piste caricate!")

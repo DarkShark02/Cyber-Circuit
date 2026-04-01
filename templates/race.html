@@ -55,6 +55,7 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
     <div id="speed-container">
         <div class="mini-label">KM/H</div>
         <div id="speed-val">0</div>
+        <div id="turbo-status">TURBO READY</div>
     </div>
 
     <div id="minimap-container">
@@ -69,6 +70,9 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
+<script>
+    const TRACK_JSON = "{{ track_json_path }}";
+</script>
 <script type="module">
     import { initGame } from '/static/js/race.js';
 

@@ -45,6 +45,9 @@ class Track(db.Model):
     difficulty = db.Column(db.String(20))
     model_path = db.Column(db.String(200))
     reward_multiplier = db.Column(db.Float, default=1.0)
+    checkpoints = db.Column(db.Text)  # JSON string
+    laps = db.Column(db.Integer, default=3)
+
 
 class Lobby(db.Model):
     id = db.Column(db.Integer, primary_key=True)

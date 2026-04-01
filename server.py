@@ -1,13 +1,13 @@
 import os
 import uuid
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+import threading
+import time
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_socketio import SocketIO, emit, join_room, leave_room
-import threading
-import time
 
 from models import db, User, CarCatalog, UserCar, Friendship, Track, Lobby
 from init_db import setup_db
@@ -24,6 +24,9 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+# Gestione spawn dinamico per lobby
+lobby_spawn_counters = {}
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -76,15 +79,20 @@ def logout():
 @app.route('/garage')
 @login_required
 def garage():
-    # Se l'utente entra in garage, resettiamo la sua lobby_id
     if current_user.lobby_id:
         current_user.lobby_id = None
         db.session.commit()
 
     car_id = request.args.get('select_car', type=int)
+    if car_id:
+        owned = UserCar.query.filter_by(id=car_id, user_id=current_user.id).first()
+        if owned:
+            current_user.active_car_id = owned.id
+            db.session.commit()
+
     user_cars = db.session.query(UserCar, CarCatalog).join(CarCatalog).filter(UserCar.user_id == current_user.id).all()
+    active_pair = next((p for p in user_cars if p.UserCar.id == current_user.active_car_id), user_cars[0] if user_cars else None)
     
-    active_pair = next((p for p in user_cars if p.UserCar.id == car_id), user_cars[0] if user_cars else None)
     active_car = active_pair.UserCar if active_pair else None
     car_info = active_pair.CarCatalog if active_pair else None
     
@@ -120,6 +128,7 @@ def save_car_config():
     user_car = UserCar.query.filter_by(id=data.get('car_id'), user_id=current_user.id).first()
     if user_car:
         user_car.color = data.get('color')
+        current_user.active_car_id = user_car.id 
         db.session.commit()
         return jsonify({'success': True})
     return jsonify({'success': False}), 400
@@ -171,14 +180,11 @@ def accept_friend(user_id):
 @app.route('/create_lobby')
 @login_required
 def create_lobby():
-    # Elimina eventuali vecchie lobby dell'host per pulizia
     Lobby.query.filter_by(host_id=current_user.id).delete()
-    
     code = str(uuid.uuid4())[:6].upper()
     new_lobby = Lobby(code=code, host_id=current_user.id)
     db.session.add(new_lobby)
     db.session.commit()
-    
     current_user.lobby_id = new_lobby.id 
     db.session.commit()
     return redirect(url_for('view_lobby', code=code))
@@ -187,21 +193,17 @@ def create_lobby():
 @login_required
 def view_lobby(code):
     lobby = Lobby.query.filter_by(code=code).first_or_404()
-    current_user.lobby_id = lobby.id # Assicura che l'utente sia collegato alla lobby
+    current_user.lobby_id = lobby.id
     db.session.commit()
-
     tracks = Track.query.all()
     friendships = Friendship.query.filter(((Friendship.user_id == current_user.id) | (Friendship.friend_id == current_user.id)), Friendship.status == 'accepted').all()
     friend_list = [User.query.get(f.friend_id if f.user_id == current_user.id else f.user_id) for f in friendships]
-    
     return render_template('lobby.html', lobby=lobby, tracks=tracks, friends=friend_list)
 
 @app.route('/select_track/<int:lobby_id>/<int:track_id>', methods=['POST'])
 @login_required
 def select_track(lobby_id, track_id):
-    # Nuovo metodo SQLAlchemy 2.0
     lobby = db.session.get(Lobby, lobby_id) 
-    
     if lobby and lobby.host_id == current_user.id:
         lobby.track_id = track_id
         db.session.commit()
@@ -225,21 +227,16 @@ def handle_join(data):
 def handle_disconnect():
     if current_user.is_authenticated:
         lobby = Lobby.query.filter_by(host_id=current_user.id).first()
-        
         if lobby and not lobby.is_started:
-            # Avviamo un timer in un thread separato
-            # Se dopo 5 secondi l'host non è ancora "is_started", cancelliamo
             def delayed_cleanup(app_context, lobby_id):
                 with app_context:
-                    time.sleep(5)  # Aspetta 5 secondi
+                    time.sleep(5)
                     l = Lobby.query.get(lobby_id)
                     if l and not l.is_started:
                         db.session.delete(l)
                         db.session.commit()
-                        print(f"[SISTEMA] Lobby {l.code} rimossa per inattività host.")
-
-            # Passiamo l'app_context per permettere al thread di usare il DB
-            from flask import current_app
+                        if lobby_id in lobby_spawn_counters:
+                            del lobby_spawn_counters[lobby_id]
             thread = threading.Thread(target=delayed_cleanup, args=(current_app.app_context(), lobby.id))
             thread.start()
 
@@ -253,7 +250,11 @@ def handle_track(data):
 
 @socketio.on('update_position')
 def handle_position(data):
-    data.update({'user_id': current_user.id, 'username': current_user.username})
+    # Includiamo dati dell'auto per caricamento dinamico degli avversari
+    data.update({
+        'user_id': current_user.id, 
+        'username': current_user.username
+    })
     emit('player_moved', data, broadcast=True, include_self=False)
 
 # --- RACE SYSTEM ---
@@ -262,29 +263,82 @@ def handle_position(data):
 @login_required
 def start_race_logic(lobby_id):
     lobby = db.session.get(Lobby, lobby_id)
-    
-    if not lobby:
-        return "Lobby non trovata", 404
-
+    if not lobby: return "Lobby non trovata", 404
     if current_user.id == lobby.host_id:
-        lobby.is_started = True  # <--- QUESTO FERMA IL TIMER DI ELIMINAZIONE
+        lobby.is_started = True
         db.session.commit()
-        
-        socketio.emit('redirect_to_race', {
-            'url': url_for('race_screen', code=lobby.code)
-        }, room=lobby.code)
-        
+        socketio.emit('redirect_to_race', {'url': url_for('race_screen', code=lobby.code)}, room=lobby.code)
         return redirect(url_for('race_screen', code=lobby.code))
-    
     return "Non autorizzato", 403
 
 @app.route('/race/<code>')
 @login_required
 def race_screen(code):
     lobby = Lobby.query.filter_by(code=code).first_or_404()
-    # Recuperiamo l'auto attiva dell'utente per caricarla nel gioco 3D
-    user_car = UserCar.query.filter_by(user_id=current_user.id).first() 
-    return render_template('race.html', lobby=lobby, user_car=user_car)
+    user_car = UserCar.query.get(current_user.active_car_id)
+    track = Track.query.get(lobby.track_id)
+    if not user_car:
+        user_car = UserCar.query.filter_by(user_id=current_user.id).first()
+        if user_car:
+            current_user.active_car_id = user_car.id
+            db.session.commit()
+    return render_template(
+        'race.html',
+        lobby=lobby,
+        track_json_path=track.model_path,
+        user_car=user_car
+    )
+
+@socketio.on('request_spawn_point')
+def handle_spawn_request():
+    lobby_id = current_user.lobby_id
+    if not lobby_id:
+        emit('spawn_data', {'spawnPos': {'x': 0, 'y': 1, 'z': 0}})
+        return
+
+    if lobby_id not in lobby_spawn_counters:
+        lobby_spawn_counters[lobby_id] = 0
+    
+    count = lobby_spawn_counters[lobby_id]
+    lobby_spawn_counters[lobby_id] += 1
+    
+    spawn_pos = {
+        'x': count * 7, # Distanziati di 7 metri per evitare collisioni
+        'y': 1,
+        'z': 0
+    }
+    emit('spawn_data', {'spawnPos': spawn_pos})
+
+@socketio.on('get_active_players')
+def handle_get_players():
+    # In questa versione semplificata, gli altri player vengono scoperti tramite 'player_moved'
+    # che ora include modelPath e color
+    pass
+
+race_state = {}
+
+@socketio.on("checkpoint_passed")
+def handle_cp(cp):
+    race_state[current_user.id]["checkpoint"] = cp
+    update_standings()
+
+@socketio.on("lap_completed")
+def handle_lap(lap):
+    race_state[current_user.id]["lap"] = lap
+    update_standings()
+
+@socketio.on("race_finished")
+def handle_finish():
+    race_state[current_user.id]["finished"] = True
+    socketio.emit("race_results", race_state)
+
+def update_standings():
+    standings = sorted(
+        race_state.items(),
+        key=lambda p: (-p[1]["lap"], -p[1]["checkpoint"])
+    )
+    socketio.emit("standings_update", standings)
+
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

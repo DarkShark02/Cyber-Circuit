@@ -31,9 +31,9 @@ def setup_db(app):
     with app.app_context():
         if not Track.query.first():
             piste = [
-                Track(name="Neon City Circuit", difficulty="Facile", model_path="track_easy.glb", reward_multiplier=1.0),
-                Track(name="Cyber Canyon", difficulty="Media", model_path="track_medium.glb", reward_multiplier=1.5),
-                Track(name="The Abyss", difficulty="Difficile", model_path="track_hard.glb", reward_multiplier=2.5)
+                Track(name="Neon City Circuit", difficulty="Facile", model_path = "/static/json/tracks/easy.json", reward_multiplier=1.0),
+                Track(name="Cyber Canyon", difficulty="Media", model_path="/static/json/tracks/medium.json", reward_multiplier=1.5),
+                Track(name="The Abyss", difficulty="Difficile", model_path="/static/json/tracks/hard.json", reward_multiplier=2.5)
             ]
             db.session.add_all(piste)
             db.session.commit()

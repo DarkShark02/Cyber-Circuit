@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+body, html {
+    margin:0; padding:0;
+    width:100%; height:100%;
+    background:#000;
+    color:#39ff14;
+    font-family:'Orbitron', sans-serif;
+}
+#podium-container {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    height:100vh;
+}
+.podium-title {
+    font-size:2em;
+    margin-bottom:20px;
+}
+.podium-list {
+    list-style:none;
+    padding:0;
+}
+.podium-list li {
+    margin:8px 0;
+    font-size:1.1em;
+}
+.back-btn {
+    margin-top:30px;
+    padding:10px 20px;
+    border:1px solid #39ff14;
+    background:transparent;
+    color:#39ff14;
+    cursor:pointer;
+    text-transform:uppercase;
+}
+.back-btn:hover {
+    background:#39ff14;
+    color:#000;
+}
+</style>
+
+<div id="podium-container">
+    <div class="podium-title">RACE RESULTS – {{ lobby.code }}</div>
+    <ul class="podium-list">
+        {% for r in results.rewards %}
+        <li>
+            #{{ r.position }} – {{ r.username }} (+{{ r.reward }} CR)
+        </li>
+        {% endfor %}
+    </ul>
+
+    <button class="back-btn" onclick="window.location.href='{{ url_for('garage') }}'">
+        Torna al Garage
+    </button>
+</div>
+{% endblock %}

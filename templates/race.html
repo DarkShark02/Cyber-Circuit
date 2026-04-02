@@ -8,7 +8,10 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
     pointer-events:none; z-index:10; font-family:'Orbitron', sans-serif;
 }
 
-.top-left-hud { position:absolute; top:85px; left:20px; border-left:3px solid #39ff14; padding-left:12px; }
+.top-left-hud {
+    position:absolute; top:85px; left:20px;
+    border-left:3px solid #39ff14; padding-left:12px;
+}
 
 .stats-panel {
     position:absolute; top:85px; right:20px;
@@ -18,6 +21,27 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
 }
 
 .mini-label { font-size:0.55em; color:#00f2ff; text-transform:uppercase; }
+
+.center-top-hud {
+    position:absolute;
+    top:85px;   /* prima era 20px */
+    left:50%;
+    transform:translateX(-50%);
+    text-align:center;
+    color:#39ff14;
+    font-size:0.9em;
+}
+
+#position-label {
+    font-size:1.1em;
+    color:#fff;
+}
+
+#lap-label {
+    font-size:0.7em;
+    color:#00f2ff;
+    text-transform:uppercase;
+}
 
 #speed-container { position:absolute; bottom:30px; left:30px; }
 #speed-val { font-size:2.2em; font-weight:900; color:#fff; text-shadow:0 0 15px #39ff14; }
@@ -34,37 +58,82 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
     background:#000; display:flex; justify-content:center; align-items:center;
     color:#39ff14; z-index:100;
 }
+
+#countdown {
+    position: fixed;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 8em;
+    font-family: 'Orbitron', sans-serif;
+    color: #39ff14;
+    text-shadow: 0 0 30px rgba(57, 255, 20, 0.8), 0 0 60px rgba(0,0,0,0.5);
+    display: none;
+    z-index: 1000;
+    pointer-events: none;
+    animation: countdownPop 0.5s ease-out infinite alternate;
+}
+
+@keyframes countdownPop {
+    from { transform: translate(-50%, -50%) scale(1); }
+    to { transform: translate(-50%, -50%) scale(1.1); }
+}
+
+/* Assicurati che l'overlay di caricamento sia sopra tutto */
+#loading-overlay {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:#000; display:flex; justify-content:center; align-items:center;
+    color:#39ff14; z-index:2000; /* Più alto del countdown */
+    font-family: 'Orbitron', sans-serif;
+}
 </style>
 
-<div id="loading-overlay">INIZIALIZZAZIONE...</div>
+<div id="loading-overlay">CARICAMENTO ASSET...</div>
+<div id="countdown">3</div>
+
 
 <div id="game-hud">
+
+    <!-- DRIVER INFO -->
     <div class="top-left-hud">
         <div class="mini-label">DRIVER</div>
         <div style="color:#fff;">{{ current_user.username }}</div>
+
         <div class="mini-label">CAR</div>
         <div style="color:#00f2ff;">{{ user_car.car.name }}</div>
     </div>
 
+    <!-- POSITION + LAPS -->
+    <div class="center-top-hud">
+        <div class="mini-label">POSITION</div>
+        <div id="position-label">WAITING...</div>
+        <div id="lap-label">LAP 0 / {{ track_data.laps }}</div>
+    </div>
+
+    <!-- CAR STATS -->
     <div class="stats-panel">
         SPD: {{ user_car.car.speed }} |
         ACC: {{ user_car.car.accel }} |
         HAN: {{ user_car.car.handling }}
     </div>
 
+    <!-- SPEED -->
     <div id="speed-container">
         <div class="mini-label">KM/H</div>
         <div id="speed-val">0</div>
         <div id="turbo-status">TURBO READY</div>
     </div>
 
+    <!-- MINIMAP -->
     <div id="minimap-container">
         <canvas id="minimap-canvas" width="100" height="100"></canvas>
     </div>
+
 </div>
 
 <div id="canvas-container"></div>
 
+<!-- LIBRARIES -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/GLTFLoader.js"></script>
@@ -72,16 +141,30 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
 
 <script>
     const TRACK_JSON = "{{ track_json_path }}";
+    const CURRENT_USER_ID = "{{ current_user.id }}";
+    const LOBBY_CODE = "{{ lobby.code }}";
+    const LOBBY_HOST_ID = "{{ lobby_host_id }}";
+    const PRACTICE_MODE = "{{ 'true' if practice_mode else 'false' }}";
+    window.PRACTICE_MODE = PRACTICE_MODE === "true";
 </script>
+
+
 <script type="module">
     import { initGame } from '/static/js/race.js';
 
-    // Inizializziamo il socket qui
     const socket = io();
 
+    // Join stanza lobby
+    socket.on("connect", () => {
+        socket.emit("join_lobby", { code: LOBBY_CODE });
+    });
+
     initGame({
-        socket: socket, // Passiamo il socket al gioco
+        socket: socket,
         username: "{{ current_user.username }}",
+        userId: CURRENT_USER_ID,
+        lobbyHostId: LOBBY_HOST_ID,
+        lobbyCode: LOBBY_CODE,
         stats: {
             speed: parseFloat("{{ user_car.car.speed }}") || 50,
             accel: parseFloat("{{ user_car.car.accel }}") || 50,
@@ -91,4 +174,5 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
         carColor: "{{ user_car.color }}" || "#39ff14"
     });
 </script>
+
 {% endblock %}

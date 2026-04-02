@@ -5,6 +5,8 @@ let otherPlayers = {};
 let socket;
 let myUsername;
 let myModelPath;
+let lobbyCode = null;
+let lobbyHostId = null; // Aggiungi questa variabile globale nel file
 
 // TURBO
 let turboActive = false;
@@ -27,6 +29,10 @@ let nextCheckpoint = 0;
 let currentLap = 0;
 let totalLaps = 0;
 let trackLoaded = false;
+let raceStarted = false;
+let myUserId = null;
+let totalLapsClient = 0;
+
 
 // MINIMAP
 let minimapCanvas = null;
@@ -48,6 +54,10 @@ export function initGame(config) {
     carStats = config.stats;
     carColor = config.carColor;
     myModelPath = config.modelPath;
+    myUserId = config.userId;   
+    myUserId = Number(myUserId);
+    lobbyCode = config.lobbyCode;
+    lobbyHostId = config.lobbyHostId;
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000105);
@@ -94,15 +104,34 @@ export function initGame(config) {
     setupSocketListeners();
 
     // === CARICAMENTO PISTA ===
-    fetch(TRACK_JSON)
-        .then(res => res.json())
-        .then(data => {
-            trackData = data;
-            totalLaps = data.laps;
-            createTrackObjects();
-            createTrack();
-            trackLoaded = true;
-        });
+    if (window.PRACTICE_MODE) {
+        raceStarted = true;   // AVVIA SUBITO LA GARA
+
+        // carica il JSON della pista di prova
+        fetch("/static/json/tracks/freeTrack.json")
+            .then(res => res.json())
+            .then(data => {
+                trackData = data;
+                totalLaps = 0;
+                totalLapsClient = 0;
+
+                createTrack(); // crea terreno + muri + asfalto
+
+                // NON creare checkpoint e finish
+                trackLoaded = true;
+            });
+    }else {
+        fetch(TRACK_JSON)
+            .then(res => res.json())
+            .then(data => {
+                trackData = data;
+                totalLaps = data.laps;
+                totalLapsClient = data.laps;
+                createTrack();
+                createTrackObjects();
+                trackLoaded = true;
+            });
+    }
 
     let spawned = false;
     socket.emit("request_spawn_point");
@@ -183,7 +212,6 @@ function getRoadDirectionAt(x, z) {
     return angle;
 }
 
-
 // === OGGETTI PISTA ===
 function createTrackObjects() {
     if (!trackData) return;
@@ -200,15 +228,144 @@ function createTrackObjects() {
 
     nextCheckpoint = 0;
     currentLap = 0;
+    createFinishLineVisual(f.x, f.y, f.z);
 }
 
 function createTrigger(x, y, z, size) {
-    const geo = new THREE.BoxGeometry(size, 5, size);
+    // Trigger invisibile (fisico)
+    const roadWidth = trackData.roadWidth || 30;
+    // Creiamo un box largo quanto la strada, alto 10 e profondo 4
+    const geo = new THREE.BoxGeometry(roadWidth, 10, 4);
+
     const mat = new THREE.MeshBasicMaterial({ visible: false });
+    const trigger = new THREE.Mesh(geo, mat);
+    trigger.position.set(x, y + 2.5, z);
+
+    // === Calcolo direzione pista nel punto ===
+    const pts = trackData.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.5);
+
+    let bestT = 0;
+    let bestDist = Infinity;
+    const steps = 200;
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const p = curve.getPoint(t);
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d < bestDist) {
+            bestDist = d;
+            bestT = t;
+        }
+    }
+
+    const tangent = curve.getTangent(bestT).normalize();
+    const angle = Math.atan2(tangent.x, tangent.z);
+
+    // Ruotiamo anche il trigger fisico per allinearlo alla pista
+    trigger.rotation.y = angle;
+    scene.add(trigger);
+
+    // === Striscia gialla (Visuale) ===
+    const stripeWidth = roadWidth;
+    const stripeHeight = 3;
+
+    const stripeGeo = new THREE.PlaneGeometry(stripeWidth, stripeHeight);
+    const stripeMat = new THREE.MeshStandardMaterial({
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.35,
+        emissive: 0xffff00,
+        emissiveIntensity: 0.6,
+        side: THREE.DoubleSide
+    });
+
+    const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+    stripe.position.set(x, y + 0.1, z);
+    stripe.rotation.x = -Math.PI / 2;
+    stripe.rotation.z = angle;
+
+    scene.add(stripe);
+    
+    // Salviamo il riferimento alla striscia per cambiare colore dopo
+    trigger.userData.visual = stripe;
+
+    return trigger;
+}
+
+function createFinishLineVisual(x, y, z) {
+    const width = trackData.roadWidth || 30;
+    const height = 6; 
+
+    const geo = new THREE.PlaneGeometry(width, height);
+    const mat = new THREE.MeshStandardMaterial({
+        transparent: true,
+        opacity: 1,
+        side: THREE.FrontSide
+    });
+
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y + 2.5, z);
+
+    // === Orientamento rispetto alla pista ===
+    const pts = trackData.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.5);
+
+    let bestT = 0;
+    let bestDist = Infinity;
+    const steps = 200;
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const p = curve.getPoint(t);
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d < bestDist) {
+            bestDist = d;
+            bestT = t;
+        }
+    }
+
+    const tangent = curve.getTangent(bestT).normalize();
+    const angle = Math.atan2(tangent.x, tangent.z);
+    
+    // POSIZIONAMENTO
+    mesh.position.set(x, y + 0.15, z);
+
+    // ROTAZIONE: Sdraia e poi ruota per seguire la strada
+    mesh.rotation.x = -Math.PI / 2; 
+    mesh.rotation.z = angle;
+
+    // === Texture a scacchi ===
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 256; 
+    const ctx = canvas.getContext("2d");
+
+    const cellSize = 64; 
+    for (let i = 0; i < canvas.width / cellSize; i++) {
+        for (let j = 0; j < canvas.height / cellSize; j++) {
+            ctx.fillStyle = (i + j) % 2 === 0 ? "#000000" : "#ffffff";
+            ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
+        }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 1); 
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+
+    mat.map = tex;
+    mat.needsUpdate = true;
+
     scene.add(mesh);
-    return mesh;
+    
+    // Se non esiste già un finishLine fisico (trigger), usiamo questo mesh per worldToLocal
+    if (!finishLine) {
+        // Creiamo un contenitore invisibile ruotato per la collisione del traguardo
+        const triggerGeo = new THREE.BoxGeometry(width, 10, 4);
+        finishLine = new THREE.Mesh(triggerGeo, new THREE.MeshBasicMaterial({visible: false}));
+        finishLine.position.set(x, y + 2.5, z);
+        finishLine.rotation.y = angle;
+        scene.add(finishLine);
+    }
 }
 
 // === PISTA ===
@@ -358,23 +515,58 @@ function createRoad() {
 
 // === GRIP ASFALTO / TERRA ===
 function getSurfaceGrip() {
-    if (!trackData || !trackData.points) return 0.6;
+    if (!trackData || !trackData.points || !carMesh) return { grip: 0.6, penalty: 1 };
 
-    const pos = carMesh.position;
+    const carPos = carMesh.position.clone();
 
-    let minDist = Infinity;
-    trackData.points.forEach(cp => {
-        const d = pos.distanceTo(new THREE.Vector3(cp.x, 0, cp.z));
-        if (d < minDist) minDist = d;
-    });
+    // spline della pista
+    const pts = trackData.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.5);
+
+    // Trova il punto della spline più vicino all’auto
+    let bestT = 0;
+    let bestDist = Infinity;
+    const steps = 300;
+
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const p = curve.getPoint(t);
+        const d = carPos.distanceTo(p);
+        if (d < bestDist) {
+            bestDist = d;
+            bestT = t;
+        }
+    }
+
+    // Punto centrale della pista più vicino
+    const center = curve.getPoint(bestT);
+
+    // Tangente e normale della pista
+    const tangent = curve.getTangent(bestT).normalize();
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+    // Distanza perpendicolare dal centro strada
+    const relative = carPos.clone().sub(center);
+    const distFromCenter = Math.abs(relative.dot(normal));
 
     const roadWidth = trackData.roadWidth || 14;
 
-    if (minDist < roadWidth * 0.6) {
-        return 1.0; // asfalto
-    } else {
-        return 0.4; // terra
+    // Dentro la strada → grip pieno
+    if (distFromCenter <= roadWidth * 0.5) {
+        return { grip: 1.0, penalty: 1.0 }; // nessuna penalità
     }
+
+    // Fuori strada → grip ridotto + penalità velocità/accelerazione
+    // Più sei lontano, più penalizza
+    const overflow = distFromCenter - roadWidth * 0.5;
+    const maxOverflow = roadWidth * 0.8;
+
+    const t = Math.min(overflow / maxOverflow, 1);
+
+    const grip = 1.0 - t * 0.7;       // grip scende fino a ~0.3
+    const penalty = 1.0 - t * 0.5;    // accel e maxSpeed scendono fino al 50%
+
+    return { grip, penalty };
 }
 
 // === NORMALIZZAZIONE MODELLO ===
@@ -592,27 +784,64 @@ function updateTurboFlames() {
 
 // === PROGRESSO GARA ===
 function updateRaceProgress() {
-    if (!trackLoaded || !carMesh) return;
-    if (!finishLine || checkpoints.length === 0) return;
+    if (!trackLoaded || !carMesh || !finishLine) return;
 
-    const pos = carMesh.position;
+    const carPos = carMesh.position.clone();
+    const roadWidth = trackData.roadWidth || 30;
 
-    const cp = checkpoints[nextCheckpoint];
-    if (cp && pos.distanceTo(cp.position) < 8) {
-        nextCheckpoint++;
-        socket.emit("checkpoint_passed", nextCheckpoint);
-    }
+    // 1. GESTIONE CHECKPOINT
+    checkpoints.forEach((cp, index) => {
+        if (!cp.userData.visual) return;
 
-    if (nextCheckpoint === checkpoints.length &&
-        pos.distanceTo(finishLine.position) < 10) {
+        if (index === nextCheckpoint) {
+            // IL PROSSIMO: Coloriamolo di Ciano per evidenziarlo
+            cp.userData.visual.material.color.set(0x00ffff);
+            cp.userData.visual.material.emissive.set(0x00ffff);
+            cp.userData.visual.material.opacity = 0.6;
 
-        currentLap++;
-        nextCheckpoint = 0;
+            // Logica di collisione precisa (OBB)
+            const localPos = cp.worldToLocal(carPos.clone());
+            // Controlliamo se siamo dentro la larghezza (x) e vicini al piano (z)
+            if (Math.abs(localPos.x) < roadWidth / 2 && Math.abs(localPos.z) < 6) {
+                nextCheckpoint++;
+                socket.emit("checkpoint_passed", nextCheckpoint);
+                // Segnaliamo visivamente che è stato preso (Verde)
+                cp.userData.visual.material.color.set(0x00ff00);
+                cp.userData.visual.material.emissive.set(0x00ff00);
+            }
+        } else if (index < nextCheckpoint) {
+            // GIA' PASSATI: Verde spento
+            cp.userData.visual.material.color.set(0x00ff00);
+            cp.userData.visual.material.opacity = 0.2;
+        } else {
+            // FUTURI: Giallo standard
+            cp.userData.visual.material.color.set(0xffff00);
+            cp.userData.visual.material.emissive.set(0xffff00);
+            cp.userData.visual.material.opacity = 0.35;
+        }
+    });
 
-        socket.emit("lap_completed", currentLap);
+    // 2. GESTIONE TRAGUARDO
+    if (nextCheckpoint >= checkpoints.length) {
+        const localPosFinish = finishLine.worldToLocal(carPos.clone());
+        
+        // Se passiamo il traguardo (entro la larghezza strada)
+        if (Math.abs(localPosFinish.x) < roadWidth / 2 && Math.abs(localPosFinish.z) < 8) {
+            currentLap++;
+            nextCheckpoint = 0;
+            socket.emit("lap_completed", currentLap);
 
-        if (currentLap >= totalLaps) {
-            socket.emit("race_finished");
+            // Reset visivo di tutti i checkpoint per il nuovo giro
+            checkpoints.forEach(cp => {
+                if(cp.userData.visual) {
+                    cp.userData.visual.material.color.set(0xffff00);
+                    cp.userData.visual.material.opacity = 0.35;
+                }
+            });
+
+            if (currentLap >= totalLaps) {
+                socket.emit("race_finished");
+            }
         }
     }
 }
@@ -659,6 +888,16 @@ function loadMyCar(path, material, spawnPos) {
         processCarMaterials(carMesh, carColor, true);
         scene.add(carMesh);
 
+        document.getElementById("loading-overlay").style.display = "none";
+        
+        // 2. Se sono l'host, dico al server di far partire il countdown per tutti
+        // (Aggiungiamo un piccolo delay di 1 secondo per far ambientare l'occhio del giocatore)
+        if (CURRENT_USER_ID === lobbyHostId) { // Assicurati di passare l'ID host nel template
+            setTimeout(() => {
+                socket.emit("request_countdown", { lobbyCode: LOBBY_CODE });
+            }, 1500);
+        }
+
         const box = new THREE.Box3().setFromObject(carMesh);
         const size = box.getSize(new THREE.Vector3());
 
@@ -677,6 +916,7 @@ function loadMyCar(path, material, spawnPos) {
         document.getElementById("loading-overlay").style.display = "none";
         setupControls();
     });
+
 }
 
 // === LOGICA DI GIOCO ===
@@ -684,8 +924,16 @@ function updateLogic() {
     world.step(1 / 60);
     if (!carBody || !carMesh) return;
 
-    let maxSpeed = (carStats.speed / 100) * 35 + 30;
-    let accelForce = ((carStats.accel / 100) * 12 + 8) * ACCEL_STRENGTH;
+    if (!raceStarted) {
+        // aggiorna solo sync posizione mesh/camera se vuoi
+        carMesh.position.copy(carBody.position);
+        carMesh.quaternion.copy(carBody.quaternion);
+        renderer.render(scene, camera);
+        return;
+    }
+
+    let maxSpeed = (carStats.speed / 100) * 50 + 30;
+    let accelForce = ((carStats.accel / 100) * 30 + 8) * ACCEL_STRENGTH;
     const steerStrength = (carStats.handling / 100) * 1.4 + 1.1;
 
     const q = carBody.quaternion;
@@ -716,7 +964,14 @@ function updateLogic() {
     }
 
     // === DRIFT + GRIP ASFALTO/TERRA ===
-    let surfaceGrip = getSurfaceGrip();
+    const surf = getSurfaceGrip();
+    let surfaceGrip = surf.grip;
+    let penalty = surf.penalty;
+
+    // Riduci accelerazione e velocità massima
+    maxSpeed *= penalty;
+    accelForce *= penalty;
+
     let lateralGrip = drifting ? surfaceGrip * 0.25 : surfaceGrip * 0.96;
     let steerBoost = drifting ? 1.6 : 1.0;
 
@@ -790,6 +1045,13 @@ function updateLogic() {
 // === ANIMAZIONE ===
 function animate() {
     requestAnimationFrame(animate);
+    scene.traverse(obj => {
+    if (obj.userData.pulse) {
+            const t = performance.now() * 0.003;
+            obj.material.opacity = 0.25 + Math.sin(t) * 0.15;
+        }
+    });
+
     updateLogic();
     renderer.render(scene, camera);
 }
@@ -798,6 +1060,8 @@ function animate() {
 function setupControls() {
     const h = (e, v) => {
         const k = e.key.toLowerCase();
+
+        if (!raceStarted) return;
 
         if (k === "w" || k === "arrowup") keys.w = v;
         if (k === "s" || k === "arrowdown") keys.s = v;
@@ -828,7 +1092,7 @@ function setupControls() {
 // === MULTIPLAYER ===
 function setupSocketListeners() {
     socket.on("player_moved", (data) => {
-        if (data.user_id === socket.id) return;
+        if (data.user_id === myUserId) return;
 
         if (!otherPlayers[data.user_id]) {
             createOtherPlayer(data.user_id, data);
@@ -836,17 +1100,78 @@ function setupSocketListeners() {
             const p = otherPlayers[data.user_id];
             p.body.position.set(data.x, data.y, data.z);
             p.body.quaternion.set(data.qx, data.qy, data.qz, data.qw);
+
+            if (p.mesh) {
+                p.mesh.position.copy(p.body.position);
+                p.mesh.quaternion.copy(p.body.quaternion);
+            }
         }
     });
 
+    // Riceve il comando di inizio countdown
+    socket.on("race_countdown", data => {
+        const cd = document.getElementById("countdown");
+        if (!cd) return;
+
+        cd.style.display = "block";
+        let count = data.seconds || 3;
+        cd.innerText = count;
+        
+        raceStarted = false; // Blocca i comandi durante il 3, 2, 1
+
+        const timer = setInterval(() => {
+            count--;
+            if (count > 0) {
+                cd.innerText = count;
+            } else if (count === 0) {
+                cd.innerText = "GO!";
+                raceStarted = true; // SBLOCCA I COMANDI
+            } else {
+                clearInterval(timer);
+                cd.style.display = "none";
+            }
+        }, 1000);
+    });
+
+    socket.on("race_start", () => {
+        raceStarted = true;
+    });
+
+    socket.on("standings_update", (standings) => {
+        const posLabel = document.getElementById("position-label");
+        const lapLabel = document.getElementById("lap-label");
+        if (!posLabel || !lapLabel || !myUserId) return;
+
+        let myPos = null;
+        let myLap = 0;
+
+        standings.forEach((entry, index) => {
+            const userId = entry[0];
+            const data = entry[1];
+            if (userId === myUserId) {
+                myPos = index + 1;
+                myLap = data.lap;
+            }
+        });
+
+        if (myPos !== null) {
+            posLabel.innerText = `${myPos}°`;
+        } else {
+            posLabel.innerText = "N/A";
+        }
+
+        lapLabel.innerText = `LAP ${Math.min(myLap + 1, totalLapsClient)} / ${totalLapsClient}`;
+    });
+
     socket.on("race_results", data => {
-        showPodium(data);
+        // redirect alla pagina podio
+        window.location.href = `/race/results/${LOBBY_CODE}`;
     });
 
     socket.on("player_disconnected", (id) => {
         if (otherPlayers[id]) {
-            scene.remove(otherPlayers[id].mesh);
-            world.removeBody(otherPlayers[id].body);
+            if (otherPlayers[id].mesh) scene.remove(otherPlayers[id].mesh);
+            if (otherPlayers[id].body) world.removeBody(otherPlayers[id].body);
             delete otherPlayers[id];
         }
     });
@@ -891,7 +1216,6 @@ function createOtherPlayer(id, data) {
         body.addShape(new CANNON.Box(halfExtents));
     });
 }
-
 
 // === MINIMAP ===
 function updateMinimap() {

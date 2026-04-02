@@ -100,8 +100,7 @@ export function initGame(config) {
             trackData = data;
             totalLaps = data.laps;
             createTrackObjects();
-            createTerrain();
-            createRoadWithBorders();
+            createTrack();
             trackLoaded = true;
         });
 
@@ -109,22 +108,81 @@ export function initGame(config) {
     socket.emit("request_spawn_point");
 
     socket.once("spawn_data", (data) => {
-        if (!spawned) {
-            spawned = true;
-            loadMyCar(myModelPath, wheelMaterial, data.spawnPos);
-            socket.emit("get_active_players");
-        }
+        if (spawned) return;
+        spawned = true;
+
+        const sp = data.spawnPos;
+
+        // Altezza reale della strada
+        const realY = getRoadHeightAt(sp.x, sp.z);
+        sp.y = realY + 1;
+
+        // Direzione reale della pista
+        sp.rotY = getRoadDirectionAt(sp.x, sp.z);
+
+        loadMyCar(myModelPath, wheelMaterial, sp);
     });
+
 
     setTimeout(() => {
         if (!spawned) {
             spawned = true;
+            console.warn("Spawn point data not received in time, using default position.");
             loadMyCar(myModelPath, wheelMaterial, { x: 0, y: 1, z: 0 });
         }
-    }, 1500);
+    }, 3000);
 
     animate();
 }
+
+// === UTILS PER SPAWN ===
+function getRoadHeightAt(x, z) {
+    const pts = trackData.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.5);
+
+    let bestT = 0;
+    let bestDist = Infinity;
+    const steps = 300;
+
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const p = curve.getPoint(t);
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d < bestDist) {
+            bestDist = d;
+            bestT = t;
+        }
+    }
+
+    return curve.getPoint(bestT).y;
+}
+
+function getRoadDirectionAt(x, z) {
+    const pts = trackData.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.5);
+
+    let bestT = 0;
+    let bestDist = Infinity;
+    const steps = 300;
+
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const p = curve.getPoint(t);
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d < bestDist) {
+            bestDist = d;
+            bestT = t;
+        }
+    }
+
+    const tangent = curve.getTangent(bestT).normalize();
+
+    // Converti la tangente in angolo Y
+    const angle = Math.atan2(tangent.x, tangent.z);
+
+    return angle;
+}
+
 
 // === OGGETTI PISTA ===
 function createTrackObjects() {
@@ -134,7 +192,7 @@ function createTrackObjects() {
     finishLine = createTrigger(f.x, f.y, f.z, 12);
 
     checkpoints = [];
-    trackData.checkpoints.forEach((cp, i) => {
+    trackData.points.forEach((cp, i) => {
         const trigger = createTrigger(cp.x, cp.y, cp.z, 10);
         trigger.userData.index = i;
         checkpoints.push(trigger);
@@ -153,200 +211,159 @@ function createTrigger(x, y, z, size) {
     return mesh;
 }
 
-// === TERRENO (SOLO SFONDO) ===
+// === PISTA ===
+function createTrack() {
+    if (!trackData) return;
+
+    // 1) Terreno → genera trackData.bounds
+    createTerrain();
+
+    // 2) Muri → usa i bounds generati
+    const { minX, maxX, minZ, maxZ } = trackData.bounds;
+    createBoundaryWalls(minX, maxX, minZ, maxZ);
+
+    // 3) Asfalto → ora può essere disegnato
+    createRoad();
+}
+
+// === TERRENO ===
 function createTerrain() {
-    const geo = new THREE.PlaneGeometry(5000, 5000);
+    const { minX, maxX, minZ, maxZ } = trackData.terrain;
+
+    trackData.bounds = { minX, maxX, minZ, maxZ };
+
+    const width = maxX - minX;
+    const height = maxZ - minZ;
+
+    const geo = new THREE.PlaneGeometry(width, height);
     const mat = new THREE.MeshStandardMaterial({
-        color: 0x3b2a16,   // marrone terra
-        roughness: 1,
-        metalness: 0
+        color: 0x3b2a16,
+        roughness: 1
     });
 
     const terrain = new THREE.Mesh(geo, mat);
     terrain.rotation.x = -Math.PI / 2;
-    terrain.position.y = 0;      // terra a y = 0
+    terrain.position.set(
+        (minX + maxX) / 2,
+        0,
+        (minZ + maxZ) / 2
+    );
+
     terrain.receiveShadow = true;
     scene.add(terrain);
 }
 
+// === MURI DI CONFINE ===
+function createBoundaryWalls(minX, maxX, minZ, maxZ, height = 5, thickness = 2) {
+    const wallMaterial = new THREE.MeshStandardMaterial({
+        color: 0x111111,
+        roughness: 1
+    });
 
-// === STRADA SEMPLICE ===
-// === BLOCCO A: PISTA 3D CON BORDI FISICI ===
-function createRoadWithBorders() {
-    if (!trackData || !trackData.checkpoints || trackData.checkpoints.length < 2) return;
+    function makeWall(x, y, z, w, h, d) {
+        const geo = new THREE.BoxGeometry(w, h, d);
+        const mesh = new THREE.Mesh(geo, wallMaterial);
+        mesh.position.set(x, y + h / 2, z);
+        mesh.castShadow = true;
+        scene.add(mesh);
 
-    const roadWidth = trackData.roadWidth || 14;
-    const wallHeight = 2.2;
-    const wallThickness = 1.0;
-    const terrainWidth = trackData.terrainWidth || 40;
+        const body = new CANNON.Body({
+            mass: 0,
+            shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)),
+            position: new CANNON.Vec3(x, y + h / 2, z)
+        });
+        world.addBody(body);
+    }
 
-    const centerPoints = trackData.checkpoints.map(cp =>
-        new THREE.Vector3(cp.x, (cp.y || 0) + 0.05, cp.z)
-    );
+    const width = maxX - minX;
+    const depth = maxZ - minZ;
 
-    const curve = new THREE.CatmullRomCurve3(centerPoints, true);
-    const segments = Math.max(100, Math.floor(curve.getLength() / 1));
+    makeWall((minX + maxX) / 2, 0, maxZ, width, height, thickness);
+    makeWall((minX + maxX) / 2, 0, minZ, width, height, thickness);
+    makeWall(maxX, 0, (minZ + maxZ) / 2, thickness, height, depth);
+    makeWall(minX, 0, (minZ + maxZ) / 2, thickness, height, depth);
+}
 
-    const leftPts = [];
-    const rightPts = [];
+// === ASFALTO ===
+function createRoad() {
+    if (!trackData || !trackData.points) return;
+
+    const roadWidth = trackData.roadWidth || 12;
+
+    const pts = trackData.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+    // spline della pista
+    const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal", 0.5);
+
+    const segments = 400;
+    const left = [];
+    const right = [];
 
     for (let i = 0; i <= segments; i++) {
         const t = i / segments;
         const p = curve.getPoint(t);
         const tangent = curve.getTangent(t).normalize();
-        const left = new THREE.Vector3(-tangent.z, 0, tangent.x).multiplyScalar(roadWidth / 2);
-        const right = left.clone().multiplyScalar(-1);
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-        leftPts.push(new THREE.Vector3().copy(p).add(left));
-        rightPts.push(new THREE.Vector3().copy(p).add(right));
+        left.push(p.clone().add(normal.clone().multiplyScalar(roadWidth / 2)));
+        right.push(p.clone().add(normal.clone().multiplyScalar(-roadWidth / 2)));
     }
 
-    // Road mesh
     const positions = [];
     const uvs = [];
     const indices = [];
 
-    for (let i = 0; i < leftPts.length; i++) {
-        const l = leftPts[i];
-        const r = rightPts[i];
-        positions.push(l.x, l.y, l.z);
-        positions.push(r.x, r.y, r.z);
-        const v = i / (leftPts.length - 1);
-        uvs.push(0, v * 10);
-        uvs.push(1, v * 10);
+    for (let i = 0; i < left.length; i++) {
+        const L = left[i];
+        const R = right[i];
+
+        positions.push(L.x, 0.05, L.z);
+        positions.push(R.x, 0.05, R.z);
+
+        const v = i / (left.length - 1);
+        uvs.push(0, v * 5);
+        uvs.push(1, v * 5);
     }
 
-    for (let i = 0; i < leftPts.length - 1; i++) {
+    for (let i = 0; i < left.length - 1; i++) {
         const a = i * 2;
         const b = a + 1;
         const c = a + 2;
         const d = a + 3;
+
         indices.push(a, b, c);
         indices.push(b, d, c);
     }
 
     const roadGeo = new THREE.BufferGeometry();
-    roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    roadGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    roadGeo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
     roadGeo.setIndex(indices);
     roadGeo.computeVertexNormals();
 
     const roadMat = new THREE.MeshStandardMaterial({
-        color: 0x111111,
-        roughness: 0.7,
-        metalness: 0.05
+        color: 0x555555,
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide   // per sicurezza
     });
 
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     roadMesh.receiveShadow = true;
     scene.add(roadMesh);
 
-    // Side terrain strips
-    const leftTerrainGeo = createStripGeometry(leftPts, roadWidth / 2, terrainWidth / 2, true);
-    const rightTerrainGeo = createStripGeometry(rightPts, roadWidth / 2, terrainWidth / 2, false);
-
-    const terrainMat = new THREE.MeshStandardMaterial({ color: 0x3b2a16, roughness: 1, metalness: 0 });
-    const leftTerrain = new THREE.Mesh(leftTerrainGeo, terrainMat);
-    const rightTerrain = new THREE.Mesh(rightTerrainGeo, terrainMat);
-    leftTerrain.receiveShadow = true;
-    rightTerrain.receiveShadow = true;
-    scene.add(leftTerrain);
-    scene.add(rightTerrain);
-
-    // Walls with physics
-    createWallsAlongEdge(leftPts, -1, roadWidth / 2, wallHeight, wallThickness);
-    createWallsAlongEdge(rightPts, 1, roadWidth / 2, wallHeight, wallThickness);
-
-    // Helpers
-    function createStripGeometry(edgePts, innerOffset, outerOffset, flip) {
-        const pos = [];
-        const uvs = [];
-        const idx = [];
-
-        for (let i = 0; i < edgePts.length; i++) {
-            const p = edgePts[i];
-            const next = edgePts[(i + 1) % edgePts.length];
-            const dir = new THREE.Vector3().subVectors(next, p).normalize();
-            const out = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-
-            const inner = new THREE.Vector3().copy(p).add(out.clone().multiplyScalar(innerOffset));
-            const outer = new THREE.Vector3().copy(p).add(out.clone().multiplyScalar(outerOffset + innerOffset));
-
-            pos.push(inner.x, inner.y - 0.01, inner.z);
-            pos.push(outer.x, outer.y - 0.01, outer.z);
-
-            const v = i / (edgePts.length - 1);
-            uvs.push(0, v * 5);
-            uvs.push(1, v * 5);
-        }
-
-        for (let i = 0; i < edgePts.length - 1; i++) {
-            const a = i * 2;
-            const b = a + 1;
-            const c = a + 2;
-            const d = a + 3;
-            if (!flip) {
-                idx.push(a, b, c);
-                idx.push(b, d, c);
-            } else {
-                idx.push(a, c, b);
-                idx.push(b, c, d);
-            }
-        }
-
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-        g.setIndex(idx);
-        g.computeVertexNormals();
-        return g;
-    }
-
-    function createWallsAlongEdge(edgePts, sideSign, halfRoad, wallHeight, wallThickness) {
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.9, metalness: 0.1 });
-        for (let i = 0; i < edgePts.length - 1; i++) {
-            const p0 = edgePts[i];
-            const p1 = edgePts[i + 1];
-
-            const mid = new THREE.Vector3().addVectors(p0, p1).multiplyScalar(0.5);
-            const segDir = new THREE.Vector3().subVectors(p1, p0);
-            const segLen = segDir.length();
-            segDir.normalize();
-
-            const out = new THREE.Vector3(-segDir.z, 0, segDir.x).normalize().multiplyScalar(sideSign * (halfRoad + wallThickness / 2));
-            const wallCenter = mid.clone().add(out);
-            wallCenter.y = wallHeight / 2;
-
-            const wallGeo = new THREE.BoxGeometry(segLen + 0.1, wallHeight, wallThickness);
-            const wallMesh = new THREE.Mesh(wallGeo, wallMat);
-            wallMesh.position.copy(wallCenter);
-            const angle = Math.atan2(segDir.x, segDir.z);
-            wallMesh.rotation.y = angle;
-            wallMesh.receiveShadow = true;
-            wallMesh.castShadow = true;
-            scene.add(wallMesh);
-
-            // Physics body
-            const halfExtents = new CANNON.Vec3((segLen + 0.1) / 2, wallHeight / 2, wallThickness / 2);
-            const wallBody = new CANNON.Body({ mass: 0 });
-            const quat = new CANNON.Quaternion();
-            quat.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), wallMesh.rotation.y);
-            wallBody.addShape(new CANNON.Box(halfExtents), new CANNON.Vec3(0, 0, 0), quat);
-            wallBody.position.set(wallMesh.position.x, wallMesh.position.y, wallMesh.position.z);
-            world.addBody(wallBody);
-        }
-    }
+    trackData._left = left;
+    trackData._right = right;
 }
-
 
 // === GRIP ASFALTO / TERRA ===
 function getSurfaceGrip() {
-    if (!trackData || !trackData.checkpoints) return 0.6;
+    if (!trackData || !trackData.points) return 0.6;
 
     const pos = carMesh.position;
 
     let minDist = Infinity;
-    trackData.checkpoints.forEach(cp => {
+    trackData.points.forEach(cp => {
         const d = pos.distanceTo(new THREE.Vector3(cp.x, 0, cp.z));
         if (d < minDist) minDist = d;
     });
@@ -392,6 +409,7 @@ function normalizeModel(mesh) {
     return wrapper;
 }
 
+// === ORIENTAMENTO AUTO (X o Z) ===
 function getCarOrientation(mesh) {
     const box = new THREE.Box3().setFromObject(mesh);
     const size = box.getSize(new THREE.Vector3());
@@ -466,6 +484,7 @@ function createDriftSmoke() {
     scene.add(driftSmokeRight);
 }
 
+// === AGGIORNAMENTO PARTICELLE DRIFT ===
 function updateDriftSmoke() {
     if (!drifting || (!keys.a && !keys.d) || !carMesh) {
         if (driftSmokeLeft) driftSmokeLeft.visible = false;
@@ -536,6 +555,7 @@ function createTurboFlames() {
     scene.add(turboFlames);
 }
 
+// === AGGIORNAMENTO TURBO ===
 function updateTurboFlames() {
     if (!turboFlames || !carMesh) return;
 
@@ -607,6 +627,10 @@ function loadMyCar(path, material, spawnPos) {
         material: material
     });
 
+    if (spawnPos.rotY !== undefined) {
+        carBody.quaternion.setFromEuler(0, spawnPos.rotY, 0);
+    }
+
     carBody.angularFactor = new CANNON.Vec3(0, 1, 0);
     carBody.angularDamping = 0.4;
     carBody.linearDamping = 0.05;
@@ -667,6 +691,7 @@ function updateLogic() {
     const q = carBody.quaternion;
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+
 
     const forwardVel = carBody.velocity.dot(new CANNON.Vec3(forward.x, forward.y, forward.z));
     const sideVel = carBody.velocity.dot(new CANNON.Vec3(right.x, right.y, right.z));
@@ -867,8 +892,8 @@ function createOtherPlayer(id, data) {
     });
 }
 
+
 // === MINIMAP ===
-// === BLOCCO B: MINIMAP DALL'ALTO COMPLETA ===
 function updateMinimap() {
     if (!minimapCtx || !carMesh || !trackData) return;
 
@@ -878,24 +903,27 @@ function updateMinimap() {
 
     ctx.clearRect(0, 0, w, h);
 
-    // background
-    ctx.fillStyle = "#050505";
+    // === SFONDO (terreno) ===
+    ctx.fillStyle = "#3b2a16"; 
     ctx.fillRect(0, 0, w, h);
 
-    const cx = carMesh.position.x;
-    const cz = carMesh.position.z;
+    const { minX, maxX, minZ, maxZ } = trackData.terrain;
+    const worldW = maxX - minX;
+    const worldH = maxZ - minZ;
+
+    minimapScale = Math.min(w / worldW, h / worldH);
 
     function worldToMini(x, z) {
         return {
-            x: w / 2 + (x - cx) * minimapScale,
-            y: h / 2 + (z - cz) * minimapScale
+            x: (x - minX) * minimapScale,
+            y: (z - minZ) * minimapScale
         };
     }
 
     const roadWidth = trackData.roadWidth || 14;
-    const centerPoints = trackData.checkpoints.map(cp => new THREE.Vector3(cp.x, cp.y || 0, cp.z));
+    const centerPoints = trackData.points.map(cp => new THREE.Vector3(cp.x, cp.y || 0, cp.z));
     const curve = new THREE.CatmullRomCurve3(centerPoints, true);
-    const segments = Math.max(80, Math.floor(curve.getLength() / 1));
+    const segments = Math.max(200, Math.floor(curve.getLength() / 1));
 
     const leftPts = [];
     const rightPts = [];
@@ -904,90 +932,65 @@ function updateMinimap() {
         const t = i / segments;
         const p = curve.getPoint(t);
         const tangent = curve.getTangent(t).normalize();
+
         const left = new THREE.Vector3(-tangent.z, 0, tangent.x).multiplyScalar(roadWidth / 2);
         const right = left.clone().multiplyScalar(-1);
 
-        leftPts.push(new THREE.Vector3().copy(p).add(left));
-        rightPts.push(new THREE.Vector3().copy(p).add(right));
+        leftPts.push(p.clone().add(left));
+        rightPts.push(p.clone().add(right));
     }
 
-    // Terrain band
-    ctx.fillStyle = "#2f1f12";
+    // === ASFALTO ===
+    ctx.fillStyle = "#555555"; 
     ctx.beginPath();
+
     for (let i = 0; i < leftPts.length; i++) {
         const p = worldToMini(leftPts[i].x, leftPts[i].z);
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
     }
+
     for (let i = rightPts.length - 1; i >= 0; i--) {
         const p = worldToMini(rightPts[i].x, rightPts[i].z);
         ctx.lineTo(p.x, p.y);
     }
+
     ctx.closePath();
     ctx.fill();
 
-    // Road polygon
-    ctx.fillStyle = "#111111";
-    ctx.beginPath();
-    for (let i = 0; i < leftPts.length; i++) {
-        const p = worldToMini(leftPts[i].x, leftPts[i].z);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-    }
-    for (let i = rightPts.length - 1; i >= 0; i--) {
-        const p = worldToMini(rightPts[i].x, rightPts[i].z);
-        ctx.lineTo(p.x, p.y);
-    }
-    ctx.closePath();
-    ctx.fill();
-
-    // Road edges (walls)
+    // === BORDI STRADA ===
     ctx.strokeStyle = "#666666";
     ctx.lineWidth = 2;
+
     ctx.beginPath();
-    for (let i = 0; i < leftPts.length; i++) {
-        const p = worldToMini(leftPts[i].x, leftPts[i].z);
+    leftPts.forEach((pt, i) => {
+        const p = worldToMini(pt.x, pt.z);
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
-    }
+    });
     ctx.stroke();
 
     ctx.beginPath();
-    for (let i = 0; i < rightPts.length; i++) {
-        const p = worldToMini(rightPts[i].x, rightPts[i].z);
+    rightPts.forEach((pt, i) => {
+        const p = worldToMini(pt.x, pt.z);
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
-    }
+    });
     ctx.stroke();
 
-    // Center dashed line
-    ctx.strokeStyle = "#333333";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        const p = curve.getPoint(t);
-        const m = worldToMini(p.x, p.z);
-        if (i === 0) ctx.moveTo(m.x, m.y);
-        else ctx.lineTo(m.x, m.y);
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Checkpoints
-    if (trackData.checkpoints && trackData.checkpoints.length > 0) {
-        for (let i = 0; i < trackData.checkpoints.length; i++) {
-            const cp = trackData.checkpoints[i];
+    // === CHECKPOINTS ===
+    if (trackData.points && trackData.points.length > 0) {
+        for (let i = 0; i < trackData.points.length; i++) {
+            const cp = trackData.points[i];
             const p = worldToMini(cp.x, cp.z);
-            ctx.fillStyle = (i === nextCheckpoint % trackData.checkpoints.length) ? "#ffff00" : "#ffcc33";
+            ctx.fillStyle = (i === nextCheckpoint % trackData.points.length) ? "#ffff00" : "#ffcc33";
             ctx.beginPath();
-            ctx.arc(p.x, p.y, (i === nextCheckpoint) ? 5 : 3, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
             ctx.fill();
         }
     }
 
-    // Finish
+    // === FINISH ===
     if (trackData.finish) {
         const f = worldToMini(trackData.finish.x, trackData.finish.z);
         ctx.fillStyle = "#ffffff";
@@ -996,38 +999,40 @@ function updateMinimap() {
         ctx.fill();
     }
 
-    // Other players
+    // === ALTRI GIOCATORI ===
     Object.values(otherPlayers).forEach(p => {
         if (!p.mesh) return;
         const pos = worldToMini(p.mesh.position.x, p.mesh.position.z);
-        drawCarIcon(ctx, pos.x, pos.y, p.mesh.quaternion ? getYawFromQuaternion(p.mesh.quaternion) : 0, "#00f2ff");
+        drawCarIcon(ctx, pos.x, pos.y, getYawFromQuaternion(p.mesh.quaternion), "#00f2ff");
     });
 
-    // My car (centered)
+    // === MIA AUTO ===
     const me = worldToMini(carMesh.position.x, carMesh.position.z);
-    drawCarIcon(ctx, me.x, me.y, getYawFromQuaternion(carMesh.quaternion), "#39ff14", true);
+    drawCarIcon(ctx, me.x, me.y, getYawFromQuaternion(carMesh.quaternion), "#ff0000");
 
-    // Helpers
-    function drawCarIcon(ctx, x, y, yaw, color, bold = false) {
+    function drawCarIcon(ctx, x, y, angle, color) {
         ctx.save();
         ctx.translate(x, y);
-        ctx.rotate(-yaw);
+        ctx.rotate(angle);
+
         ctx.fillStyle = color;
         ctx.beginPath();
-        const size = bold ? 6 : 4;
-        ctx.moveTo(0, -size);
-        ctx.lineTo(size * 0.6, size);
-        ctx.lineTo(-size * 0.6, size);
+        ctx.moveTo(0, -6);
+        ctx.lineTo(4, 6);
+        ctx.lineTo(-4, 6);
         ctx.closePath();
         ctx.fill();
+
         ctx.restore();
     }
 
     function getYawFromQuaternion(q) {
-        const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
-        const siny = 2 * (qw * qy + qz * qx);
-        const cosy = 1 - 2 * (qy * qy + qx * qx);
+        const siny = 2 * (q.w * q.y + q.z * q.x);
+        const cosy = 1 - 2 * (q.y * q.y + q.x * q.x);
         return Math.atan2(siny, cosy);
     }
 }
+
+
+
 

@@ -221,6 +221,11 @@ def handle_connect():
 def handle_join(data):
     lobby_code = data['code']
     join_room(lobby_code)
+    race_state[current_user.id] = {
+        "lap": 0,
+        "checkpoint": 0,
+        "finished": False
+    }
     emit('player_joined', {'username': current_user.username, 'user_id': current_user.id}, room=lobby_code)
 
 @socketio.on('disconnect')
@@ -292,22 +297,28 @@ def race_screen(code):
 @socketio.on('request_spawn_point')
 def handle_spawn_request():
     lobby_id = current_user.lobby_id
-    if not lobby_id:
-        emit('spawn_data', {'spawnPos': {'x': 0, 'y': 1, 'z': 0}})
+    lobby = Lobby.query.get(lobby_id)
+
+    if not lobby or not lobby.track_id:
+        emit('spawn_data', {'spawnPos': {'x': 0, 'y': 1, 'z': 0, 'rotY': 0}}, room=request.sid)
         return
+
+    track = Track.query.get(lobby.track_id)
+    import json
+    json_path = track.model_path.lstrip("/")  # rimuove lo slash iniziale
+    json_path = os.path.join(os.getcwd(), json_path)
+
+    data = json.loads(open(json_path, "r").read())
+
+    spawn_points = data.get("spawnPoints", [])
 
     if lobby_id not in lobby_spawn_counters:
         lobby_spawn_counters[lobby_id] = 0
-    
-    count = lobby_spawn_counters[lobby_id]
+
+    index = lobby_spawn_counters[lobby_id] % len(spawn_points)
     lobby_spawn_counters[lobby_id] += 1
-    
-    spawn_pos = {
-        'x': count * 7, # Distanziati di 7 metri per evitare collisioni
-        'y': 1,
-        'z': 0
-    }
-    emit('spawn_data', {'spawnPos': spawn_pos})
+
+    emit('spawn_data', {'spawnPos': spawn_points[index]}, room=request.sid)
 
 @socketio.on('get_active_players')
 def handle_get_players():

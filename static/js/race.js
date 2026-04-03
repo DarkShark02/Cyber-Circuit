@@ -920,18 +920,20 @@ function loadMyCar(path, material, spawnPos) {
 }
 
 // === LOGICA DI GIOCO ===
+let bots = []; 
+
 function updateLogic() {
     world.step(1 / 60);
     if (!carBody || !carMesh) return;
 
     if (!raceStarted) {
-        // aggiorna solo sync posizione mesh/camera se vuoi
         carMesh.position.copy(carBody.position);
         carMesh.quaternion.copy(carBody.quaternion);
         renderer.render(scene, camera);
         return;
     }
 
+    // --- LOGICA GIOCATORE LOCALE ---
     let maxSpeed = (carStats.speed / 100) * 50 + 30;
     let accelForce = ((carStats.accel / 100) * 30 + 8) * ACCEL_STRENGTH;
     const steerStrength = (carStats.handling / 100) * 1.4 + 1.1;
@@ -940,45 +942,31 @@ function updateLogic() {
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
 
-
     const forwardVel = carBody.velocity.dot(new CANNON.Vec3(forward.x, forward.y, forward.z));
     const sideVel = carBody.velocity.dot(new CANNON.Vec3(right.x, right.y, right.z));
 
-    // === TURBO ===
+    // Turbo e Superfici (Asfalto/Terra)
     if (turboActive) {
         accelForce *= 1.8;
         maxSpeed *= 1.4;
-
         turboTimer -= 1/60;
         if (turboTimer <= 0) {
             turboActive = false;
-
-            const turboEl = document.getElementById("turbo-status");
-            if (turboEl) turboEl.innerText = "TURBO NOT READY";
-
-            setTimeout(() => {
-                turboReady = true;
-                if (turboEl) turboEl.innerText = "TURBO READY";
-            }, 15000);
+            // ... gestione UI turbo ...
         }
     }
 
-    // === DRIFT + GRIP ASFALTO/TERRA ===
     const surf = getSurfaceGrip();
-    let surfaceGrip = surf.grip;
-    let penalty = surf.penalty;
+    maxSpeed *= surf.penalty;
+    accelForce *= surf.penalty;
 
-    // Riduci accelerazione e velocità massima
-    maxSpeed *= penalty;
-    accelForce *= penalty;
-
-    let lateralGrip = drifting ? surfaceGrip * 0.25 : surfaceGrip * 0.96;
+    let lateralGrip = drifting ? surf.grip * 0.25 : surf.grip * 0.96;
     let steerBoost = drifting ? 1.6 : 1.0;
 
     carBody.velocity.x -= right.x * sideVel * lateralGrip;
     carBody.velocity.z -= right.z * sideVel * lateralGrip;
 
-    // ACCELERAZIONE
+    // Input W/S
     if (keys.w && forwardVel < maxSpeed) {
         carBody.applyForce(new CANNON.Vec3(forward.x * accelForce, 0, forward.z * accelForce), carBody.position);
     } else if (keys.s && forwardVel > -maxSpeed / 2) {
@@ -988,40 +976,51 @@ function updateLogic() {
         carBody.velocity.z *= DRAG_COEFFICIENT;
     }
 
-    // STERZO
+    // Sterzo
     if (Math.abs(forwardVel) > 1) {
         const speedFactor = Math.min(Math.max(1.3 - Math.abs(forwardVel) / maxSpeed, 0.6), 1.0);
         const dir = forwardVel > 0 ? 1 : -1;
-
         if (keys.a) carBody.angularVelocity.y = steerStrength * steerBoost * dir * speedFactor;
         else if (keys.d) carBody.angularVelocity.y = -steerStrength * steerBoost * dir * speedFactor;
         else carBody.angularVelocity.y *= 0.7;
     }
 
+    // Sync Mesh Giocatore
     carBody.quaternion.x = 0;
     carBody.quaternion.z = 0;
-
     carMesh.position.copy(carBody.position);
     carMesh.quaternion.copy(carBody.quaternion);
 
-    // Aggiorna altri giocatori
+    // --- LOGICA BOT (Solo per l'Host) ---
+    if (myUserId === lobbyHostId) {
+        bots.forEach(bot => updateBotAI(bot));
+    }
+
+
+    // Sync Altri Giocatori e Bot (Ricevuti dal server)
     Object.values(otherPlayers).forEach(p => {
-        if (p.mesh && p.body) {
-            p.mesh.position.copy(p.body.position);
-            p.mesh.quaternion.copy(p.body.quaternion);
+        if (p.mesh) {
+            // Se è un bot o un altro player, aggiorniamo la mesh con i dati ricevuti
+            // (La logica di lerp/smooth va qui se necessario)
+            if (p.body) {
+                p.mesh.position.copy(p.body.position);
+                p.mesh.quaternion.copy(p.body.quaternion);
+            }
         }
     });
 
+    // Effetti e UI
     updateDriftSmoke();
     updateTurboFlames();
     updateRaceProgress();
     updateMinimap();
 
-    // CAMERA FOLLOW
+    // Camera
     const camOffset = new THREE.Vector3(0, 4, -11).applyQuaternion(carMesh.quaternion);
     camera.position.lerp(carMesh.position.clone().add(camOffset), 0.12);
     camera.lookAt(carMesh.position);
 
+    // Dynamic FOV e UI Speed
     const dynamicFOV = BASE_FOV + (Math.abs(forwardVel) / maxSpeed) * 15;
     camera.fov = THREE.MathUtils.lerp(camera.fov, dynamicFOV, 0.05);
     camera.updateProjectionMatrix();
@@ -1029,6 +1028,7 @@ function updateLogic() {
     const speedEl = document.getElementById("speed-val");
     if (speedEl) speedEl.innerText = Math.abs(Math.round(forwardVel * 3.6));
 
+    // Invio posizione locale
     socket.emit("update_position", {
         x: carBody.position.x,
         y: carBody.position.y,
@@ -1131,6 +1131,11 @@ function setupSocketListeners() {
                 cd.style.display = "none";
             }
         }, 1000);
+    });
+
+    socket.on("bot_spawn", data => {
+        console.log("🔥 BOT SPAWN EVENT RECEIVED:", data);
+        spawnBotClientSide(data);
     });
 
     socket.on("race_start", () => {
@@ -1357,6 +1362,73 @@ function updateMinimap() {
     }
 }
 
+// === BOT ===
+function updateBotAI(bot) {
+    if (!trackData || !trackData.points) return;
+
+    const pts = trackData.points;
+    const target = pts[bot.targetIndex];
+
+    const botPos = bot.mesh.position;
+    const dir = new THREE.Vector3(
+        target.x - botPos.x,
+        0,
+        target.z - botPos.z
+    );
+
+    const dist = dir.length();
+
+    dir.normalize();
+    bot.mesh.position.add(dir.multiplyScalar(0.6));
+
+    bot.mesh.lookAt(target.x, botPos.y, target.z);
+
+    if (dist < 5) {
+        bot.targetIndex = (bot.targetIndex + 1) % pts.length;
+        console.log(`➡️ BOT ${bot.id} switching to waypoint ${bot.targetIndex}`);
+    }
+
+    // LOG DI MOVIMENTO
+    console.log(`🏎️ BOT ${bot.id} moved to:`, {
+        x: bot.mesh.position.x.toFixed(2),
+        y: bot.mesh.position.y.toFixed(2),
+        z: bot.mesh.position.z.toFixed(2)
+    });
+
+    socket.emit("update_position", {
+        x: bot.mesh.position.x,
+        y: bot.mesh.position.y,
+        z: bot.mesh.position.z,
+        rotY: bot.mesh.rotation.y,
+        user_id: bot.id,
+        username: bot.username
+    });
+}
+
+
+function spawnBotClientSide(data) {
+    console.log(`🚗 Spawning bot ${data.bot_id} (${data.username}) with model ${data.modelPath}`);
+
+    const { bot_id, username, modelPath, color } = data;
+
+    new THREE.GLTFLoader().load(modelPath, gltf => {
+        const mesh = normalizeModel(gltf.scene);
+        processCarMaterials(mesh, color, false);
+        scene.add(mesh);
+
+        const bot = {
+            id: bot_id,
+            username,
+            mesh,
+            targetIndex: 0,
+            speed: 0,
+        };
+
+        bots.push(bot);
+
+        console.log(`✅ BOT ${bot_id} spawned successfully`);
+    });
+}
 
 
 

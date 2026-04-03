@@ -146,6 +146,7 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
     const LOBBY_HOST_ID = "{{ lobby_host_id }}";
     const PRACTICE_MODE = "{{ 'true' if practice_mode else 'false' }}";
     window.PRACTICE_MODE = PRACTICE_MODE === "true";
+    const isHost = CURRENT_USER_ID === "{{ lobby_host_id }}";
 </script>
 
 

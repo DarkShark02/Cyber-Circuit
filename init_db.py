@@ -5,7 +5,7 @@ def setup_db(app):
         db.create_all()
         # Controlla se il catalogo è già popolato
         if not CarCatalog.query.filter_by(name="FIAT PUNTO GT").first():
-            print("📦 Popolamento catalogo con nuovi modelli...")
+            print("Popolamento catalogo con nuovi modelli...")
             
             cars = [
                 CarCatalog(name="FIAT PUNTO GT", model_path="fiat_punto_gt.glb", 
@@ -26,7 +26,7 @@ def setup_db(app):
             
             db.session.add_all(cars)
             db.session.commit()
-            print("✅ Catalogo aggiornato con successo!")
+            print(" Catalogo aggiornato con successo!")
 
     with app.app_context():
         if not Track.query.first():
@@ -37,4 +37,4 @@ def setup_db(app):
             ]
             db.session.add_all(piste)
             db.session.commit()
-            print("✅ Piste caricate!")
+            print(" Piste caricate!")

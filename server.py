@@ -3,6 +3,9 @@ import uuid
 import threading
 import time
 import json
+import webview
+import sys
+import requests
 
 from flask import (
     Flask, render_template, request, redirect,
@@ -20,15 +23,29 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from models import db, User, CarCatalog, UserCar, Friendship, Track, Lobby
 from init_db import setup_db
 
-app = Flask(__name__)
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+app = Flask(
+    __name__,
+    template_folder=resource_path("templates"),
+    static_folder=resource_path("static")
+)
 app.config['SECRET_KEY'] = 'neon_speed_secret_2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///racist_game.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(basedir, "racist_game.db")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
+
+
 
 db.init_app(app)
 setup_db(app)
 bcrypt = Bcrypt(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
@@ -364,11 +381,20 @@ def handle_connect():
         join_room(f"user_{current_user.id}")
 
 
+class BotPlayer:
+    def __init__(self, bot_id, username, car_catalog_id, color):
+        self.id = bot_id
+        self.username = username
+        self.car_id = car_catalog_id
+        self.color = color
+        self.is_bot = True
+
 @socketio.on('join_lobby')
 def handle_join(data):
     lobby_code = data['code']
     lobby = Lobby.query.filter_by(code=lobby_code).first()
-    if not lobby:
+    if not lobby or len(lobby.players) >= 3:
+        emit('error', {'message': 'Lobby piena!'})
         return
 
     join_room(lobby_code)
@@ -497,10 +523,48 @@ def start_race_logic(lobby_id):
     if not lobby or current_user.id != lobby.host_id:
         return "Non autorizzato", 403
 
+    use_bots = request.args.get('use_bots') == 'true'
     lobby.is_started = True
     db.session.commit()
 
     # Comunica a tutti i client di spostarsi sulla pagina della gara
+    if use_bots:
+        num_players = len(lobby.players)
+
+        host_pair = (
+            db.session.query(UserCar, CarCatalog)
+            .join(CarCatalog, CarCatalog.id == UserCar.catalog_id)
+            .filter(UserCar.id == current_user.active_car_id)
+            .first()
+        )
+
+        user_car = host_pair.UserCar
+        catalog = host_pair.CarCatalog
+
+        for i in range(3 - num_players):
+            bot_id = f"bot_{uuid.uuid4().hex[:4]}"
+            print(f"[SERVER] Spawning bot {bot_id} ({i+1}/{3-num_players})")
+
+            race_state[lobby.id][bot_id] = {
+                "username": f"RACIST_BOT_{i+1}",
+                "is_bot": True,
+                "car_catalog_id": catalog.id,
+                "color": user_car.color,
+                "lap": 0,
+                "checkpoint": 0,
+                "finished": False,
+                "finish_time": None
+            }
+
+            socketio.emit("bot_spawn", {
+                "bot_id": bot_id,
+                "username": f"RACIST_BOT_{i+1}",
+                "modelPath": catalog.model_path,
+                "color": user_car.color
+            }, room=lobby.code)
+
+            print(f"[SERVER] bot_spawn sent for {bot_id}")
+
     socketio.emit('redirect_to_race', {'url': url_for('race_screen', code=lobby.code)}, room=lobby.code)
 
     # Reindirizza anche l'host stesso
@@ -522,9 +586,9 @@ def race_screen(code):
     if not track:
         return "Pista non selezionata", 400
 
-    json_path = track.model_path.lstrip("/")
-    json_path = os.path.join(os.getcwd(), json_path)
-    track_json = json.loads(open(json_path).read())
+    json_path = resource_path(track.model_path.lstrip("/"))
+    with open(json_path, "r") as f:
+        track_json = json.load(f)
 
     return render_template(
         'race.html',
@@ -551,10 +615,9 @@ def handle_spawn_request():
         return
 
     track = Track.query.get(lobby.track_id)
-    json_path = track.model_path.lstrip("/")
-    json_path = os.path.join(os.getcwd(), json_path)
-    data = json.loads(open(json_path, "r").read())
-
+    json_path = resource_path(track.model_path.lstrip("/"))
+    with open(json_path, "r") as f:
+        data = json.load(f)
     spawn_points = data.get("spawnPoints", [])
 
     if lobby_id not in lobby_spawn_counters:
@@ -666,9 +729,9 @@ def finalize_race(lobby_id):
     )
 
     # Carica reward
-    json_path = track.model_path.lstrip("/")
-    json_path = os.path.join(os.getcwd(), json_path)
-    track_json = json.loads(open(json_path).read())
+    json_path = resource_path(track.model_path.lstrip("/"))
+    with open(json_path, "r") as f:
+        track_json = json.load(f)
     reward_table = track_json.get("reward", {})
 
     rewards_assigned = []
@@ -720,6 +783,26 @@ def race_results_page(code):
     # template "race_results.html" con podio + bottone "Torna al garage"
     return render_template("race_results.html", lobby=lobby, results=results)
 
+def wait_for_server():
+    while True:
+        try:
+            requests.get("http://127.0.0.1:5000")
+            break
+        except:
+            time.sleep(0.2)
+
+def start_app():
+    def run_server():
+        socketio.run(app, host='127.0.0.1', port=5000, debug=False)
+
+    t = threading.Thread(target=run_server)
+    t.daemon = True
+    t.start()
+
+    wait_for_server()
+
+    webview.create_window("Racist Game", "http://127.0.0.1:5000")
+    webview.start()
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    start_app()

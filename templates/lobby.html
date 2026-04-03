@@ -6,7 +6,7 @@
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div>
             <div class="players-list panel-section" style="margin-bottom: 20px;">
-                <h3 style="color: #39ff14; font-size: 0.9em;">PILOTI IN GRIGLIA:</h3>
+                <h3 style="color: #39ff14; font-size: 0.9em;">PILOTI IN GRIGLIA (<span id="player-count">{{ lobby.players|length }}</span>/3):</h3>
                 <ul id="player-ul" style="list-style: none; padding: 0;">
                     {% for player in lobby.players %}
                         <li id="player-li-{{ player.id }}" style="color: #fff; padding: 5px 0; border-bottom: 1px solid #333;">
@@ -15,6 +15,18 @@
                     {% endfor %}
                 </ul>
             </div>
+
+            {% if current_user.id == lobby.host_id %}
+            <div class="bot-section panel-section" style="margin-bottom: 20px; border: 1px solid #39ff14; background: rgba(57, 255, 20, 0.05);">
+                <label style="color: #39ff14; font-family: 'Orbitron'; font-size: 0.8em; cursor: pointer; display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="fill-with-bots" style="width: 18px; height: 18px; accent-color: #39ff14;">
+                    COMPLETA GRIGLIA CON BOT
+                </label>
+                <p style="font-size: 0.6em; color: #888; margin-top: 8px; margin-left: 28px;">
+                    I bot occuperanno i posti vuoti usando la tua stessa auto.
+                </p>
+            </div>
+            {% endif %}
 
             <div class="invite-section panel-section">
                 <h3 style="color: #00f2ff; font-size: 0.9em;">RECLUTA CREW (AMICI):</h3>
@@ -50,7 +62,7 @@
             </div>
             
             {% if current_user.id == lobby.host_id %}
-            <button onclick="startRace({{ lobby.id }})" class="btn-cyber-main" id="btn-start" 
+            <button onclick="startRaceWithConfig({{ lobby.id }})" class="btn-cyber-main" id="btn-start" 
                     style="{% if not lobby.track_id %}opacity: 0.4; cursor: not-allowed;{% endif %}"
                     {% if not lobby.track_id %}disabled{% endif %}>
                 <span class="btn-content">AVVIA MOTORI</span>
@@ -90,7 +102,6 @@
         color: #000;
         box-shadow: 0 0 20px rgba(57, 255, 20, 0.6);
     }
-
     .btn-cyber-main:disabled {
         border-color: #333;
         color: #555;
@@ -105,7 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.emit('join_lobby', { code: lobbyCode });
 
     socket.on('player_joined', function(data) {
-        // Aggiungi alla lista piloti
         const ul = document.getElementById('player-ul');
         if (!document.getElementById(`player-li-${data.user_id}`)) {
             const li = document.createElement('li');
@@ -113,8 +123,11 @@ document.addEventListener('DOMContentLoaded', () => {
             li.style = "color: #fff; padding: 5px 0; border-bottom: 1px solid #333;";
             li.innerHTML = `${data.username} <span style="color: #39ff14; font-size: 0.7em;">[ONLINE]</span>`;
             ul.appendChild(li);
+            
+            // Aggiorna contatore
+            const countSpan = document.getElementById('player-count');
+            countSpan.innerText = ul.children.length;
         }
-        // Nascondi dai possibili invitabili
         const row = document.getElementById(`friend-row-${data.user_id}`);
         if (row) row.style.display = 'none';
     });
@@ -122,6 +135,11 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('player_left', function(data) {
         const li = document.getElementById(`player-li-${data.user_id}`);
         if (li) li.remove();
+        
+        const countSpan = document.getElementById('player-count');
+        const ul = document.getElementById('player-ul');
+        countSpan.innerText = ul.children.length;
+
         const row = document.getElementById(`friend-row-${data.user_id}`);
         if (row) row.style.display = 'flex';
     });
@@ -136,10 +154,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = document.getElementById('track-' + data.track_id);
         if(target) target.classList.add('selected');
         const btn = document.getElementById('btn-start');
-        if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.style.cursor = "pointer"; }
+        if (btn) { 
+            btn.disabled = false; 
+            btn.style.opacity = "1"; 
+            btn.style.cursor = "pointer"; 
+        }
     });
 
-    // Ricevi il segnale di inizio gara dal server
     socket.on('redirect_to_race', function(data) {
         showJsFlash("SINCRONIZZAZIONE MOTORI IN CORSO...", "success");
         setTimeout(() => {
@@ -162,11 +183,15 @@ function inviteFriend(fId) {
     showJsFlash("INVITO INVIATO", "success");
 }
 
-function startRace(lId) {
+function startRaceWithConfig(lId) {
     const btn = document.getElementById('btn-start');
-    btn.disabled = true; // Disabilita subito per evitare doppie chiamate
+    const useBots = document.getElementById('fill-with-bots')?.checked || false;
+    
+    btn.disabled = true;
     btn.innerText = "CARICAMENTO...";
-    window.location.href = "/race/start/" + lId;
+    
+    // Passiamo il parametro use_bots nell'URL
+    window.location.href = `/race/start/${lId}?use_bots=${useBots}`;
 }
 </script>
 {% endblock %}

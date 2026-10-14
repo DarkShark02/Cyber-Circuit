@@ -1,1 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
 .venv/
+
+# PyInstaller output
+build/
+dist/
+
+# Local databases (created automatically on first run)
+*.db
+instance/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

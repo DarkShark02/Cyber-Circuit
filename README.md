@@ -76,3 +76,8 @@ static/models/       Car models (.glb)
 ## Credits
 
 The 3D car models in `static/models/` are third‑party assets and belong to their original authors.
+
+## License
+
+The source code is released under the [MIT License](LICENSE) © 2026 Flavio Ruggiero.
+The 3D car models are not covered by this license.

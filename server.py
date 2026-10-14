@@ -35,8 +35,13 @@ app = Flask(
 )
 app.config['SECRET_KEY'] = 'neon_speed_secret_2026'
 
-basedir = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(basedir, "racist_game.db")
+# When frozen with PyInstaller, __file__ lives in a temp folder that is wiped on exit,
+# so keep the database next to the executable instead.
+if getattr(sys, 'frozen', False):
+    basedir = os.path.dirname(sys.executable)
+else:
+    basedir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(basedir, "cyber_circuit.db")
 
 app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
 
@@ -546,7 +551,7 @@ def start_race_logic(lobby_id):
             print(f"[SERVER] Spawning bot {bot_id} ({i+1}/{3-num_players})")
 
             race_state[lobby.id][bot_id] = {
-                "username": f"RACIST_BOT_{i+1}",
+                "username": f"CC_BOT_{i+1}",
                 "is_bot": True,
                 "car_catalog_id": catalog.id,
                 "color": user_car.color,
@@ -558,7 +563,7 @@ def start_race_logic(lobby_id):
 
             socketio.emit("bot_spawn", {
                 "bot_id": bot_id,
-                "username": f"RACIST_BOT_{i+1}",
+                "username": f"CC_BOT_{i+1}",
                 "modelPath": catalog.model_path,
                 "color": user_car.color
             }, room=lobby.code)
@@ -801,7 +806,7 @@ def start_app():
 
     wait_for_server()
 
-    webview.create_window("Racist Game", "http://127.0.0.1:5000")
+    webview.create_window("Cyber Circuit", "http://127.0.0.1:5000")
     webview.start()
 
 if __name__ == '__main__':

@@ -63,7 +63,7 @@ body {
     overflow: hidden;
 }
 
-/* Effetto luce che si muove dietro il pannello (opzionale) */
+/* Light sweep behind the panel (optional) */
 .auth-container::before {
     content: '';
     position: absolute;
@@ -79,7 +79,7 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* Container per i messaggi flash */
+/* Flash message container */
 .flash-container {
     position: fixed;
     top: 20px;
@@ -93,7 +93,7 @@ body {
     gap: 10px;
 }
 
-/* Stile della singola notifica */
+/* Single notification */
 .flash-message {
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(10px);
@@ -109,7 +109,7 @@ body {
     animation: slideDown 0.4s ease-out, glowPulse 2s infinite;
 }
 
-/* Colori specifici per tipo di messaggio */
+/* Colours per message type */
 .flash-success {
     color: #39ff14;
     border-color: #39ff14;
@@ -134,7 +134,7 @@ body {
     100% { filter: brightness(1); }
 }
 
-/* Classe per la sparizione via JS */
+/* Fade-out class added from JS */
 .fade-out {
     opacity: 0;
     transition: opacity 0.5s ease-out;

@@ -2,111 +2,105 @@
 {% block content %}
 <div class="social-container cyberpunk-card" style="max-width: 800px; margin: 40px auto; padding: 30px; background: rgba(10,10,10,0.95); border: 1px solid #00f2ff;">
     
-    <h1 style="color: #00f2ff; text-shadow: 0 0 10px #00f2ff; font-family: 'Orbitron';">CENTRO COMUNICAZIONI</h1>
+    <h1 style="color: #00f2ff; text-shadow: 0 0 10px #00f2ff; font-family: 'Orbitron';">COMMS CENTER</h1>
 
     <div style="margin-bottom: 30px;">
-        <label style="color: #888; font-size: 0.8em; letter-spacing: 2px;">CERCA PILOTI NEL DATABASE</label>
+        <label style="color: #888; font-size: 0.8em; letter-spacing: 2px;">SEARCH DRIVERS</label>
         <div style="display: flex; gap: 10px; margin-top: 5px;">
-            <input type="text" id="searchQuery" placeholder="Inserisci username..." 
+            <input type="text" id="searchQuery" placeholder="Enter a username..." 
                    style="flex-grow: 1; background: #000; border: 1px solid #333; color: #fff; padding: 10px; font-family: 'Orbitron';">
-            <button onclick="searchUsers()" class="btn-main">SCANNERIZZA</button>
+            <button onclick="searchUsers()" class="btn-main">SCAN</button>
         </div>
         <div id="searchResults" style="margin-top: 10px; display: flex; flex-direction: column; gap: 5px;"></div>
     </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div class="panel-section">
-            <h3 style="color: #ff0055; font-size: 0.9em; border-bottom: 1px solid #ff005533;">RICHIESTE IN ARRIVO</h3>
+            <h3 style="color: #ff0055; font-size: 0.9em; border-bottom: 1px solid #ff005533;">INCOMING REQUESTS</h3>
             {% for p in pending %}
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
                 <span style="color: #fff;">{{ p.username }}</span>
                 <form action="/accept_friend/{{ p.id }}" method="POST">
-                    <button type="submit" class="btn-small" style="background: #39ff14; color: #000;">ACCETTA</button>
+                    <button type="submit" class="btn-small" style="background: #39ff14; color: #000;">ACCEPT</button>
                 </form>
             </div>
             {% else %}
-            <p style="font-size: 0.7em; color: #444;">Nessuna trasmissione in attesa.</p>
+            <p style="font-size: 0.7em; color: #444;">No pending transmissions.</p>
             {% endfor %}
         </div>
 
         <div class="panel-section">
-            <h3 style="color: #00f2ff; font-size: 0.9em; border-bottom: 1px solid #00f2ff33;">CREW ATTUALE</h3>
+            <h3 style="color: #00f2ff; font-size: 0.9em; border-bottom: 1px solid #00f2ff33;">YOUR CREW</h3>
             {% for f in friends %}
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
                 <span style="color: #fff;">{{ f.username }}</span>
-                <span class="online-status">ONLINE</span>
             </div>
             {% else %}
-            <p style="font-size: 0.7em; color: #444;">Pilota solitario...</p>
+            <p style="font-size: 0.7em; color: #444;">Lone driver...</p>
             {% endfor %}
         </div>
     </div>
 </div>
 
 <script>
+document.getElementById('searchQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter') searchUsers();
+});
+
 function searchUsers() {
     const q = document.getElementById('searchQuery').value.trim();
     const resDiv = document.getElementById('searchResults');
-    
-    console.log("[JS] Avvio searchUsers per:", q);
-
-    if (q.length < 0) {
-        console.warn("[JS] Testo troppo breve.");
+    if (!q) {
+        resDiv.innerHTML = '';
         return;
     }
 
-    resDiv.innerHTML = '<p style="color: #00f2ff; font-size: 0.8em; animate: pulse 1s infinite;">>> CONNESSIONE DATABASE IN CORSO...</p>';
+    resDiv.innerHTML = '<p style="color: #00f2ff; font-size: 0.8em;">>> SCANNING DATABASE...</p>';
 
     fetch(`/search_players?q=${encodeURIComponent(q)}`)
     .then(response => {
-        console.log("[JS] Risposta server ricevuta. Status:", response.status);
-        if (!response.ok) throw new Error('Errore risposta server: ' + response.status);
+        if (!response.ok) throw new Error('Server error: ' + response.status);
         return response.json();
     })
     .then(data => {
-        console.log("[JS] Dati ricevuti:", data);
         resDiv.innerHTML = '';
 
-        if (data.error) {
-            resDiv.innerHTML = `<p style="color: red;">ERRORE SISTEMA: ${data.error}</p>`;
-            return;
-        }
-
         if (data.length === 0) {
-            resDiv.innerHTML = '<p style="color: #ff0055; font-size: 0.8em;">NESSUN SEGNALE RILEVATO</p>';
+            resDiv.innerHTML = '<p style="color: #ff0055; font-size: 0.8em;">NO SIGNAL DETECTED</p>';
             return;
         }
 
         data.forEach(user => {
-            resDiv.innerHTML += `
-                <div class="search-item" style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,242,255,0.05); padding: 10px; border-left: 3px solid #00f2ff; margin-bottom: 5px;">
-                    <span style="color: #fff; font-family: 'Orbitron'; font-size: 0.9em;">${user.username}</span>
-                    <button onclick="sendRequest(${user.id})" class="btn-small" style="background: #00f2ff; color: #000; border:none; padding: 5px 10px; cursor:pointer; font-weight:bold;">RECLUTA</button>
-                </div>
-            `;
+            const row = document.createElement('div');
+            row.className = 'search-item';
+            row.style = "display: flex; justify-content: space-between; align-items: center; background: rgba(0,242,255,0.05); padding: 10px; border-left: 3px solid #00f2ff; margin-bottom: 5px;";
+
+            const name = document.createElement('span');
+            name.style = "color: #fff; font-family: 'Orbitron'; font-size: 0.9em;";
+            name.textContent = user.username;
+
+            const btn = document.createElement('button');
+            btn.className = 'btn-small';
+            btn.style = "background: #00f2ff; color: #000; border:none; padding: 5px 10px; cursor:pointer; font-weight:bold;";
+            btn.textContent = 'ADD FRIEND';
+            btn.onclick = () => sendRequest(user.id);
+
+            row.append(name, btn);
+            resDiv.appendChild(row);
         });
     })
     .catch(error => {
-        console.error("[JS] Errore Fetch:", error);
-        resDiv.innerHTML = '<p style="color: red;">CRITICAL ERROR: Scanner offline.</p>';
+        console.error(error);
+        resDiv.innerHTML = '<p style="color: red;">ERROR: scanner offline.</p>';
     });
 }
 
 function sendRequest(id) {
     fetch(`/send_friend_request/${id}`, { method: 'POST' })
     .then(r => r.json())
-    .then(data => {
-        // Invece di alert, usa il sistema cyberpunk
-        if (data.success) {
-            showJsFlash(data.message, "success");
-        } else {
-            showJsFlash(data.message, "error");
-        }
-        searchUsers(); // Aggiorna la lista
-    })
-    .catch(err => showJsFlash("Errore di connessione al database", "error"));
+    .then(data => showJsFlash(data.message, data.success ? "success" : "error"))
+    .catch(() => showJsFlash("Connection error.", "error"));
 }
-
 </script>
 
 <style>
@@ -123,7 +117,6 @@ function sendRequest(id) {
     }
     .btn-main:hover { background: #fff; box-shadow: 0 0 20px #fff; }
     .btn-small { font-family: 'Orbitron'; font-size: 0.7em; border: none; padding: 5px 10px; cursor: pointer; font-weight: bold; }
-    .online-status { color: #39ff14; font-size: 0.6em; border: 1px solid #39ff14; padding: 2px 5px; }
     .panel-section { background: rgba(255,255,255,0.02); padding: 15px; border-radius: 5px; }
     .search-item:hover { background: rgba(0, 242, 255, 0.1) !important; }
 </style>

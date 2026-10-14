@@ -5,25 +5,25 @@
     <div class="glass-panel" style="width: 280px; display: flex; flex-direction: column; padding: 20px; background: rgba(15,15,15,0.9); border: 1px solid rgba(0,242,255,0.3); border-radius: 10px; height: 100%; gap: 20px;">   
         <div>
             <h2 style="color: #00f2ff; margin: 0; font-size: 1.4em; text-shadow: 0 0 10px #00f2ff;">GARAGE</h2>
-            <p style="opacity: 0.5; margin: 5px 0 20px 0; font-size: 0.7em; letter-spacing: 1px;">PILOTA: {{ current_user.username }}</p>
+            <p style="opacity: 0.5; margin: 5px 0 20px 0; font-size: 0.7em; letter-spacing: 1px;">DRIVER: {{ current_user.username }}</p>
             
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <label style="font-size: 0.65em; color: #00f2ff; display: block; margin: 25px 0 10px 0; letter-spacing: 1px; font-weight: bold;"><span>{{ car_info.name }}</span></label>
                 <div>
-                    <div class="stat-label"><span>VELOCITÀ</span><span>{{ car_info.speed }}%</span></div>
+                    <div class="stat-label"><span>SPEED</span><span>{{ car_info.speed }}%</span></div>
                     <div class="stat-bar"><div class="stat-fill" style="width: {{ car_info.speed }}%;"></div></div>
                 </div>
                 <div>
-                    <div class="stat-label"><span>ACCELERAZIONE</span><span>{{ car_info.accel }}%</span></div>
+                    <div class="stat-label"><span>ACCELERATION</span><span>{{ car_info.accel }}%</span></div>
                     <div class="stat-bar"><div class="stat-fill" style="width: {{ car_info.accel }}%;"></div></div>
                 </div>
                 <div>
-                    <div class="stat-label"><span>MANEGGEVOLEZZA</span><span>{{ car_info.handling }}%</span></div>
+                    <div class="stat-label"><span>HANDLING</span><span>{{ car_info.handling }}%</span></div>
                     <div class="stat-bar"><div class="stat-fill" style="width: {{ car_info.handling }}%;"></div></div>
                 </div>
             </div>
 
-            <label style="font-size: 0.65em; color: #00f2ff; display: block; margin: 25px 0 10px 0; letter-spacing: 1px; font-weight: bold;">VERNICIATURA</label>
+            <label style="font-size: 0.65em; color: #00f2ff; display: block; margin: 25px 0 10px 0; letter-spacing: 1px; font-weight: bold;">PAINT</label>
             <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
                 {% set colors = [
                     ['#00f2ff', 'linear-gradient(135deg, #00f2ff, #0066ff)'],
@@ -48,14 +48,14 @@
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 10px;">
-            <button id="saveBtn" class="btn-main">SALVA CONFIGURAZIONE</button>
+            <button id="saveBtn" class="btn-main">SAVE SETUP</button>
             
             <a href="/create_lobby" class="btn-main" style="background: #ff0055; color: #fff; text-align: center; text-decoration: none; border-color: #ff0055;">
-                CREA LOBBY PRIVATA
+                CREATE PRIVATE LOBBY
             </a>
 
             <a href="/race" class="btn-main" style="background: #39ff14; color: #000; text-align: center; text-decoration: none; border-color: #39ff14;">
-                ENTRA IN PISTA DI PROVA
+                PRACTICE TRACK
             </a>
         </div>
 
@@ -72,22 +72,12 @@
         <div id="canvas-container" class="car-viewer" 
              data-model="{{ url_for('static', filename='models/' + model_file) }}"
              style="width: 100%; height: 100%;">
-            <div class="loading-text" style="position: absolute; top: 50%; left: 50%; color: #00f2ff; transform: translate(-50%, -50%); font-size: 0.9em; letter-spacing: 2px;">SINCRONIZZAZIONE...</div>
+            <div class="loading-text" style="position: absolute; top: 50%; left: 50%; color: #00f2ff; transform: translate(-50%, -50%); font-size: 0.9em; letter-spacing: 2px;">LOADING...</div>
         </div>
     </div>
 </div>
 
-<div id="invite-popup" style="display: none; position: fixed; top: 20px; right: 20px; z-index: 9999; background: rgba(0,0,0,0.95); border: 2px solid #00f2ff; padding: 20px; border-radius: 5px; font-family: 'Orbitron'; box-shadow: 0 0 20px #00f2ff; width: 280px; animation: slideIn 0.5s ease-out;">
-    <h4 style="color: #00f2ff; margin: 0 0 10px 0; font-size: 0.8em; letter-spacing: 1px;">CHIAMATA IN ARRIVO</h4>
-    <p id="invite-text" style="color: #fff; font-size: 0.7em; margin-bottom: 15px;">Il pilota ... ti sfida!</p>
-    <div style="display: flex; gap: 10px;">
-        <a id="accept-link" href="#" style="flex: 1; background: #39ff14; color: #000; text-align: center; padding: 8px; text-decoration: none; font-size: 0.7em; font-weight: bold; border-radius: 3px;">ACCETTA</a>
-        <button onclick="document.getElementById('invite-popup').style.display='none'" style="flex: 1; background: #ff0055; color: #fff; border: none; padding: 8px; cursor: pointer; font-size: 0.7em; font-family: 'Orbitron'; border-radius: 3px;">RIFIUTA</button>
-    </div>
-</div>
-
 <style>
-    @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
     .stat-label { display: flex; justify-content: space-between; font-size: 0.6em; color: #888; margin-bottom: 4px; letter-spacing: 1px; }
     .stat-bar { background: rgba(255,255,255,0.05); height: 4px; border-radius: 2px; overflow: hidden; }
     .stat-fill { background: #00f2ff; height: 100%; box-shadow: 0 0 10px #00f2ff; transition: width 0.5s ease; }
@@ -119,8 +109,8 @@
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) showJsFlash("Configurazione salvata!", "success");
-            else showJsFlash("Errore nel salvataggio.", "danger");
+            if (data.success) showJsFlash("Setup saved!", "success");
+            else showJsFlash("Could not save the setup.", "error");
         });
     });
 </script>

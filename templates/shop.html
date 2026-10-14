@@ -10,26 +10,26 @@
                  id="viewer-{{ car.id }}"
                  data-model="{{ url_for('static', filename='models/' + car.model_path) }}"
                  style="width: 100%; height: 200px; background: radial-gradient(circle, #1a1a1a 0%, #050505 100%); border-radius: 10px; margin: 15px 0; position: relative; border: 1px solid rgba(0,242,255,0.2);">
-                <div class="loading-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: #444;">CARICAMENTO...</div>
+                <div class="loading-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7em; color: #444;">LOADING...</div>
             </div>
 
             <div style="margin: 15px 0; font-family: 'Rajdhani';">
                 <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 2px;">
-                    <span>VELOCITÀ</span><span>{{ car.speed }}</span>
+                    <span>SPEED</span><span>{{ car.speed }}</span>
                 </div>
                 <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 10px;">
                     <div style="width: {{ car.speed }}%; height: 100%; background: #00f2ff; box-shadow: 0 0 8px #00f2ff;"></div>
                 </div>
 
                 <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 2px;">
-                    <span>ACCELERAZIONE</span><span>{{ car.accel }}</span>
+                    <span>ACCELERATION</span><span>{{ car.accel }}</span>
                 </div>
                 <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 10px;">
                     <div style="width: {{ car.accel }}%; height: 100%; background: #ff0055; box-shadow: 0 0 8px #ff0055;"></div>
                 </div>
 
                 <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 2px;">
-                    <span>MANEGGEVOLEZZA</span><span>{{ car.handling }}</span>
+                    <span>HANDLING</span><span>{{ car.handling }}</span>
                 </div>
                 <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 10px;">
                     <div style="width: {{ car.handling }}%; height: 100%; background: #39ff14; box-shadow: 0 0 8px #39ff14;"></div>
@@ -41,7 +41,7 @@
             <form action="{{ url_for('buy_car', car_id=car.id) }}" method="POST">
                 <button type="submit" class="btn" 
                     {% if current_user.credits < car.price %} disabled style="opacity: 0.3; cursor: not-allowed; width: 100%;" {% else %} style="width: 100%;" {% endif %}>
-                    {% if current_user.credits < car.price %} CREDITI INSUFFICIENTI {% else %} ACQUISTA {% endif %}
+                    {% if current_user.credits < car.price %} NOT ENOUGH CREDITS {% else %} BUY {% endif %}
                 </button>
             </form>
         </div>
@@ -49,10 +49,10 @@
     </div>
     
     {% if not cars %}
-        <p style="text-align: center; opacity: 0.5; margin-top: 50px;">Hai già sbloccato tutti i modelli disponibili!</p>
+        <p style="text-align: center; opacity: 0.5; margin-top: 50px;">You have already unlocked every car!</p>
     {% endif %}
     
-    <a href="/garage" style="display: block; text-align: center; margin-top: 30px; color: #00f2ff; text-decoration: none; font-family: 'Orbitron'; font-size: 0.8em;">← TORNA AL GARAGE</a>
+    <a href="/garage" style="display: block; text-align: center; margin-top: 30px; color: #00f2ff; text-decoration: none; font-family: 'Orbitron'; font-size: 0.8em;">← BACK TO GARAGE</a>
 </div>
 
 <script type="importmap">

@@ -8,7 +8,7 @@
 
 - **3D racing** in the browser engine, using Three.js for rendering and Cannon.js for physics
 - **Multiplayer lobbies** with up to 3 drivers, each with a shareable 6‑character code, and real‑time position sync over Socket.IO
-- **Bots** to fill empty grid slots
+- **Bots** that fill the empty grid slots and race for real (they can beat you)
 - **Three tracks** (Neon City Circuit, Cyber Canyon, The Abyss), each defined in JSON with its own laps, spawn points and prize money
 - **Practice mode** on a free track, with no lobby and no rewards
 - **Garage**: preview your cars in 3D and change their paint colour
@@ -31,8 +31,8 @@
 Requires **Python 3.10+** on Windows (pywebview uses the system WebView2 runtime).
 
 ```bash
-git clone https://github.com/DarkShark02/cyber-circuit.git
-cd cyber-circuit
+git clone https://github.com/DarkShark02/Cyber-Circuit.git
+cd Cyber-Circuit
 
 python -m venv venv
 venv\Scripts\activate
@@ -43,7 +43,31 @@ python server.py
 
 The game opens in its own window. On first launch it creates `cyber_circuit.db` (SQLite) and fills in the car catalogue and the tracks. Register an account to start: you get 100 credits and a Fiat Punto GT.
 
-> Multiplayer runs on `127.0.0.1:5000`, so all players have to be on the same machine for now.
+### Playing over a local network
+
+By default the server only listens on `127.0.0.1`. To let friends on the same network join, start it on all interfaces:
+
+```bash
+set CC_HOST=0.0.0.0
+python server.py
+```
+
+Your friends can then open `http://<your-local-ip>:5000` in their browser.
+
+### Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CC_HOST` | `127.0.0.1` | Address the server listens on |
+| `CC_PORT` | `5000` | Port the server listens on |
+| `CC_DB_PATH` | `cyber_circuit.db` next to the app | SQLite database location |
+| `CC_SECRET_KEY` | random at every launch | Session signing key (set it to stay logged in across restarts) |
+
+### Developer helper
+
+```bash
+python add_money.py <username> [amount]   # give credits to a player
+```
 
 ### Building a standalone executable
 

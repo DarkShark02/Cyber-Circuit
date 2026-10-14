@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
+{% set is_host = current_user.id == lobby.host_id %}
 <div class="lobby-container cyberpunk-card" style="max-width: 900px; margin: 20px auto; padding: 20px; border: 1px solid #00f2ff; background: rgba(0,0,0,0.9);">
     <h2 style="font-family: 'Orbitron'; color: #00f2ff;">Lobby: <span class="neon-text" id="lobby-code">{{ lobby.code }}</span></h2>
-    
+
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div>
             <div class="players-list panel-section" style="margin-bottom: 20px;">
-                <h3 style="color: #39ff14; font-size: 0.9em;">PILOTI IN GRIGLIA (<span id="player-count">{{ lobby.players|length }}</span>/3):</h3>
+                <h3 style="color: #39ff14; font-size: 0.9em;">DRIVERS ON THE GRID (<span id="player-count">{{ lobby.players|length }}</span>/{{ max_players }}):</h3>
                 <ul id="player-ul" style="list-style: none; padding: 0;">
                     {% for player in lobby.players %}
                         <li id="player-li-{{ player.id }}" style="color: #fff; padding: 5px 0; border-bottom: 1px solid #333;">
@@ -16,61 +17,61 @@
                 </ul>
             </div>
 
-            {% if current_user.id == lobby.host_id %}
+            {% if is_host %}
             <div class="bot-section panel-section" style="margin-bottom: 20px; border: 1px solid #39ff14; background: rgba(57, 255, 20, 0.05);">
                 <label style="color: #39ff14; font-family: 'Orbitron'; font-size: 0.8em; cursor: pointer; display: flex; align-items: center; gap: 10px;">
                     <input type="checkbox" id="fill-with-bots" style="width: 18px; height: 18px; accent-color: #39ff14;">
-                    COMPLETA GRIGLIA CON BOT
+                    FILL THE GRID WITH BOTS
                 </label>
                 <p style="font-size: 0.6em; color: #888; margin-top: 8px; margin-left: 28px;">
-                    I bot occuperanno i posti vuoti usando la tua stessa auto.
+                    Bots take the empty slots and drive a copy of your car.
                 </p>
             </div>
             {% endif %}
 
             <div class="invite-section panel-section">
-                <h3 style="color: #00f2ff; font-size: 0.9em;">RECLUTA CREW (AMICI):</h3>
+                <h3 style="color: #00f2ff; font-size: 0.9em;">INVITE YOUR CREW:</h3>
                 <div id="friends-to-invite">
+                    {% set player_ids = lobby.players | map(attribute='id') | list %}
                     {% for friend in friends %}
-                        {% set player_ids = lobby.players | map(attribute='id') | list %}
-                        <div id="friend-row-{{ friend.id }}" 
-                             style="display: {% if friend.id in player_ids %}none{% else %}flex{% endif %}; 
-                                    justify-content: space-between; align-items: center; margin-bottom: 8px; 
+                        <div id="friend-row-{{ friend.id }}"
+                             style="display: {% if friend.id in player_ids %}none{% else %}flex{% endif %};
+                                    justify-content: space-between; align-items: center; margin-bottom: 8px;
                                     background: rgba(255,255,255,0.05); padding: 5px 10px;">
                             <span style="color: #bbb; font-size: 0.8em;">{{ friend.username }}</span>
-                            <button onclick="inviteFriend({{ friend.id }})" class="btn-small" style="background: #00f2ff; color: #000; border: none; padding: 2px 8px; font-size: 0.7em; font-family: 'Orbitron';">INVITA</button>
+                            <button onclick="inviteFriend({{ friend.id }})" class="btn-small" style="background: #00f2ff; color: #000; border: none; padding: 2px 8px; font-size: 0.7em; font-family: 'Orbitron';">INVITE</button>
                         </div>
                     {% else %}
-                        <p style="color: #555; font-size: 0.7em;">Nessun alleato disponibile.</p>
+                        <p style="color: #555; font-size: 0.7em;">No friends available yet.</p>
                     {% endfor %}
                 </div>
             </div>
         </div>
 
         <div class="track-selection">
-            <h3 style="color: #ff0055; font-size: 0.9em;">SELEZIONE CIRCUITO:</h3>
+            <h3 style="color: #ff0055; font-size: 0.9em;">TRACK SELECTION:</h3>
             <div class="track-grid" style="display: grid; gap: 10px;">
                 {% for track in tracks %}
-                <div id="track-{{ track.id }}" 
-                     class="track-card {% if lobby.track_id == track.id %}selected{% endif %}" 
-                     onclick="selectTrack({{ lobby.id }}, {{ track.id }})"
-                     style="border: 1px solid #333; padding: 10px; cursor: pointer;">
+                <div id="track-{{ track.id }}"
+                     class="track-card {% if lobby.track_id == track.id %}selected{% endif %}"
+                     {% if is_host %}onclick="selectTrack({{ lobby.id }}, {{ track.id }})"{% endif %}
+                     style="border: 1px solid #333; padding: 10px; cursor: {% if is_host %}pointer{% else %}default{% endif %};">
                     <h4 style="margin: 0; color: #fff;">{{ track.name }}</h4>
-                    <p style="margin: 0; font-size: 0.7em; color: #888;">Difficoltà: {{ track.difficulty }}</p>
+                    <p style="margin: 0; font-size: 0.7em; color: #888;">Difficulty: {{ track.difficulty }}</p>
                 </div>
                 {% endfor %}
             </div>
-            
-            {% if current_user.id == lobby.host_id %}
-            <button onclick="startRaceWithConfig({{ lobby.id }})" class="btn-cyber-main" id="btn-start" 
+
+            {% if is_host %}
+            <button onclick="startRace({{ lobby.id }})" class="btn-cyber-main" id="btn-start"
                     style="{% if not lobby.track_id %}opacity: 0.4; cursor: not-allowed;{% endif %}"
                     {% if not lobby.track_id %}disabled{% endif %}>
-                <span class="btn-content">AVVIA MOTORI</span>
+                <span class="btn-content">START ENGINES</span>
                 <span class="btn-glitch"></span>
             </button>
             {% else %}
             <div class="waiting-area" style="margin-top: 20px; text-align: center;">
-                <p class="blink" style="color: #ff0055; font-size: 0.8em;">IN ATTESA DELL'HOST...</p>
+                <p class="blink" style="color: #ff0055; font-size: 0.8em;">WAITING FOR THE HOST...</p>
             </div>
             {% endif %}
         </div>
@@ -110,38 +111,52 @@
 </style>
 
 <script>
-const lobbyCode = "{{ lobby.code }}";
+const lobbyCode = {{ lobby.code | tojson }};
+const leaveTimers = {};
+
+function updatePlayerCount() {
+    document.getElementById('player-count').innerText = document.getElementById('player-ul').children.length;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
-    socket.emit('join_lobby', { code: lobbyCode });
+    // Join the lobby room (again after every reconnect)
+    const joinLobby = () => socket.emit('join_lobby', { code: lobbyCode });
+    socket.on('connect', joinLobby);
+    if (socket.connected) joinLobby();
 
     socket.on('player_joined', function(data) {
+        clearTimeout(leaveTimers[data.user_id]);
         const ul = document.getElementById('player-ul');
         if (!document.getElementById(`player-li-${data.user_id}`)) {
             const li = document.createElement('li');
             li.id = `player-li-${data.user_id}`;
             li.style = "color: #fff; padding: 5px 0; border-bottom: 1px solid #333;";
-            li.innerHTML = `${data.username} <span style="color: #39ff14; font-size: 0.7em;">[ONLINE]</span>`;
+            li.textContent = data.username + ' ';
+
+            const tag = document.createElement('span');
+            tag.style = "color: #39ff14; font-size: 0.7em;";
+            tag.textContent = '[ONLINE]';
+            li.appendChild(tag);
+
             ul.appendChild(li);
-            
-            // Aggiorna contatore
-            const countSpan = document.getElementById('player-count');
-            countSpan.innerText = ul.children.length;
+            updatePlayerCount();
         }
         const row = document.getElementById(`friend-row-${data.user_id}`);
         if (row) row.style.display = 'none';
     });
 
     socket.on('player_left', function(data) {
-        const li = document.getElementById(`player-li-${data.user_id}`);
-        if (li) li.remove();
-        
-        const countSpan = document.getElementById('player-count');
-        const ul = document.getElementById('player-ul');
-        countSpan.innerText = ul.children.length;
+        // A page reload also disconnects for a moment: only drop the
+        // driver if they haven't rejoined after a few seconds
+        clearTimeout(leaveTimers[data.user_id]);
+        leaveTimers[data.user_id] = setTimeout(() => {
+            const li = document.getElementById(`player-li-${data.user_id}`);
+            if (li) li.remove();
+            updatePlayerCount();
 
-        const row = document.getElementById(`friend-row-${data.user_id}`);
-        if (row) row.style.display = 'flex';
+            const row = document.getElementById(`friend-row-${data.user_id}`);
+            if (row) row.style.display = 'flex';
+        }, 4000);
     });
 
     socket.on('lobby_closed', function(data) {
@@ -152,46 +167,43 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('track_updated', function(data) {
         document.querySelectorAll('.track-card').forEach(c => c.classList.remove('selected'));
         const target = document.getElementById('track-' + data.track_id);
-        if(target) target.classList.add('selected');
+        if (target) target.classList.add('selected');
         const btn = document.getElementById('btn-start');
-        if (btn) { 
-            btn.disabled = false; 
-            btn.style.opacity = "1"; 
-            btn.style.cursor = "pointer"; 
+        if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = "1";
+            btn.style.cursor = "pointer";
         }
     });
 
     socket.on('redirect_to_race', function(data) {
-        showJsFlash("SINCRONIZZAZIONE MOTORI IN CORSO...", "success");
+        showJsFlash("SYNCING ENGINES...", "success");
         setTimeout(() => {
             window.location.href = data.url;
         }, 1000);
     });
 });
 
-function selectTrack(lId, tId) {
-    {% if current_user.id == lobby.host_id %}
-    fetch(`/select_track/${lId}/${tId}`, { method: 'POST' })
+function selectTrack(lobbyId, trackId) {
+    fetch(`/select_track/${lobbyId}/${trackId}`, { method: 'POST' })
     .then(r => r.json()).then(data => {
-        if(data.status === "success") socket.emit('change_track', { code: lobbyCode, track_id: tId });
+        if (data.status === "success") socket.emit('change_track', { code: lobbyCode, track_id: trackId });
     });
-    {% endif %}
 }
 
-function inviteFriend(fId) {
-    socket.emit('send_lobby_invite', { friend_id: fId, lobby_code: lobbyCode });
-    showJsFlash("INVITO INVIATO", "success");
+function inviteFriend(friendId) {
+    socket.emit('send_lobby_invite', { friend_id: friendId, lobby_code: lobbyCode });
+    showJsFlash("INVITE SENT", "success");
 }
 
-function startRaceWithConfig(lId) {
+function startRace(lobbyId) {
     const btn = document.getElementById('btn-start');
     const useBots = document.getElementById('fill-with-bots')?.checked || false;
-    
+
     btn.disabled = true;
-    btn.innerText = "CARICAMENTO...";
-    
-    // Passiamo il parametro use_bots nell'URL
-    window.location.href = `/race/start/${lId}?use_bots=${useBots}`;
+    btn.innerText = "LOADING...";
+
+    window.location.href = `/race/start/${lobbyId}?use_bots=${useBots}`;
 }
 </script>
 {% endblock %}

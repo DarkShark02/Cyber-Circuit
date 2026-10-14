@@ -46,7 +46,7 @@ function initViewer(container) {
             const matName = (node.material?.name || "").toLowerCase();
             const combined = (name + " " + matName).trim();
 
-            // --- RIMOZIONE PAVIMENTO E OMBRE ---
+            // --- REMOVE FLOOR AND SHADOW MESHES ---
             const isFloorName = /floor|plane|ground|shadow|base|grid|box0|sh\.|_shadow/.test(combined);
             const worldPos = new THREE.Vector3();
             node.getWorldPosition(worldPos);
@@ -62,18 +62,18 @@ function initViewer(container) {
 
         toRemove.forEach(f => f.parent?.remove(f));
 
-        // --- SCALE + CENTER (Auto più piccole per non toccare i bordi) ---
+        // --- SCALE + CENTER (kept small so the car never touches the edges) ---
         const bbox = new THREE.Box3().setFromObject(carModel);
         const center = bbox.getCenter(new THREE.Vector3());
         const size = bbox.getSize(new THREE.Vector3());
         
-        // Ridotto: prima era 4.5/6.5, ora 3.5 per lo shop e 5.0 per il garage
+        // 3.5 units in the shop cards, 5.0 in the garage
         const scale = (isShop ? 3.5 : 5.0) / Math.max(size.x, size.y, size.z);
 
         carModel.scale.set(scale, scale, scale);
         carModel.position.set(-center.x * scale, -(bbox.min.y * scale), -center.z * scale);
 
-        // --- APPLICAZIONE MATERIALI ---
+        // --- MATERIALS ---
         meshes.forEach(node => {
             const mat = node.material;
             if (!mat) return;
@@ -86,7 +86,7 @@ function initViewer(container) {
             let isLight = false;
             let isBody = false;
 
-            // Mappatura specifica
+            // Per-model material mapping
             if (modelFileName.includes('porsche_911_carrera')) {
                 isGlass = /window|windshield/.test(name) || /window|glass/.test(matName);
                 isWheel = /cylinder/.test(name) || /rubber|silver/.test(matName);
@@ -128,7 +128,7 @@ function initViewer(container) {
                 isBody = /body|paint|coat|carrozzeria|chassis/.test(combined);
             }
 
-            // Assegnazione Toon Materials
+            // Toon materials
             if (isGlass) {
                 node.material = new THREE.MeshToonMaterial({
                     color: 0x000000,

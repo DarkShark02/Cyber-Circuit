@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Cyber Circuit - Speed is All</title>
@@ -13,11 +13,11 @@
         
         {% if current_user.is_authenticated %}
         <div style="display: flex; gap: 25px; font-family: 'Orbitron'; font-size: 0.8em;">
-            <a href="{{ url_for('garage') }}" style="color: #fff; text-decoration: none; hover: color:#00f2ff;">GARAGE</a>
+            <a href="{{ url_for('garage') }}" style="color: #fff; text-decoration: none;">GARAGE</a>
             <a href="{{ url_for('shop') }}" style="color: #fff; text-decoration: none;">SHOP</a>
             <a href="{{ url_for('social_page') }}" style="color: #fff; text-decoration: none;">FRIENDS</a>
             <a href="#" id="invite-notification" style="display: none; color: #ff0055; text-decoration: none; border: 1px solid #ff0055; padding: 2px 8px; border-radius: 4px; margin-right: 10px;">
-                <span class="blink-anim">⚠ SFIDA</span>
+                <span class="blink-anim">⚠ CHALLENGE</span>
                 <span id="invite-count" style="margin-left: 5px; background: #ff0055; color: #fff; padding: 0 5px; border-radius: 50%; font-size: 0.9em;">0</span>
             </a>
             <span style="color: #ffcc00;">{{ current_user.credits }} ₿</span>
@@ -28,11 +28,11 @@
 
     <div id="cyber-modal" class="modal-overlay" style="display:none;">
         <div class="modal-content cyberpunk-card">
-            <h3 id="modal-title" style="color: #ff0055; font-family: 'Orbitron';">RILEVATA SFIDA</h3>
+            <h3 id="modal-title" style="color: #ff0055; font-family: 'Orbitron';">INCOMING CHALLENGE</h3>
             <p id="modal-body" style="color: #fff; font-family: 'Rajdhani';"></p>
             <div style="display: flex; gap: 20px; justify-content: center; margin-top: 20px;">
-                <button id="modal-accept" class="btn-small" style="background: #39ff14;">ACCETTA</button>
-                <button id="modal-decline" class="btn-small" style="background: #ff0055;">RIFIUTA</button>
+                <button id="modal-accept" class="btn-small" style="background: #39ff14;">ACCEPT</button>
+                <button id="modal-decline" class="btn-small" style="background: #ff0055;">DECLINE</button>
             </div>
         </div>
     </div>
@@ -54,7 +54,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
 
     <script>
-        // Inizializzazione UNICA del socket per tutte le pagine
+        // Single socket connection shared by every page
         const socket = io();
         let activeInvites = [];
 
@@ -72,15 +72,13 @@
             }, 4000);
         }
 
-        // Ascolto globale degli inviti
+        // Lobby invites can arrive on any page
         socket.on('receive_invite', function(data) {
-            console.log("Notifica ricevuta:", data);
-            
-            // Verifica se l'invito è già presente per evitare duplicati
+            // Ignore duplicate invites
             if (!activeInvites.find(i => i.lobby_code === data.lobby_code)) {
                 activeInvites.push(data);
                 updateInviteBadge();
-                showJsFlash(`NUOVA SFIDA DA ${data.host_name.toUpperCase()}`, "success");
+                showJsFlash(`NEW CHALLENGE FROM ${data.host_name.toUpperCase()}`, "success");
             }
         });
 
@@ -96,8 +94,7 @@
                     e.preventDefault();
                     const lastInvite = activeInvites[activeInvites.length - 1];
                     
-                    // Setup Modal
-                    document.getElementById('modal-body').innerText = `Il pilota ${lastInvite.host_name.toUpperCase()} ti sfida in pista. Accetti il duello?`;
+                                        document.getElementById('modal-body').innerText = `${lastInvite.host_name.toUpperCase()} challenges you to a race. Do you accept?`;
                     modal.style.display = 'flex';
 
                     document.getElementById('modal-accept').onclick = () => {
@@ -106,7 +103,7 @@
                     
                     document.getElementById('modal-decline').onclick = () => {
                         modal.style.display = 'none';
-                        activeInvites.pop(); // Rimuove l'invito rifiutato
+                        activeInvites.pop(); // drop the declined invite
                         updateInviteBadge();
                     };
                 };
@@ -115,7 +112,7 @@
             }
         }
         
-        // Pulizia flash iniziali
+        // Fade out the server-side flash messages
         document.addEventListener('DOMContentLoaded', () => {
             const flashes = document.querySelectorAll('.flash-message');
             flashes.forEach(f => {
@@ -129,7 +126,7 @@
 
     <style>
         #invite-notification {
-            display: none; /* Gestito dal JS */
+            display: none; /* toggled by JS */
             align-items: center;
             gap: 8px;
             background: rgba(255, 0, 85, 0.15);

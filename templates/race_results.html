@@ -27,6 +27,8 @@ body, html {
     margin:8px 0;
     font-size:1.1em;
 }
+.podium-list li.me { color:#fff; text-shadow:0 0 10px #39ff14; }
+.dnf { color:#ff0055; font-size:0.8em; margin-left:6px; }
 .back-btn {
     margin-top:30px;
     padding:10px 20px;
@@ -46,14 +48,16 @@ body, html {
     <div class="podium-title">RACE RESULTS – {{ lobby.code }}</div>
     <ul class="podium-list">
         {% for r in results.rewards %}
-        <li>
-            #{{ r.position }} – {{ r.username }} (+{{ r.reward }} CR)
+        <li{% if r.user_id == current_user.id %} class="me"{% endif %}>
+            #{{ r.position }} – {{ r.username }}
+            {% if r.is_bot %}(BOT){% else %}(+{{ r.reward }} ₿){% endif %}
+            {% if not r.finished %}<span class="dnf">DNF</span>{% endif %}
         </li>
         {% endfor %}
     </ul>
 
     <button class="back-btn" onclick="window.location.href='{{ url_for('garage') }}'">
-        Torna al Garage
+        Back to Garage
     </button>
 </div>
 {% endblock %}

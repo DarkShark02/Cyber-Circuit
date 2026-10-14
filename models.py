@@ -56,6 +56,6 @@ class Lobby(db.Model):
     track_id = db.Column(db.Integer, db.ForeignKey('track.id'), nullable=True)
     is_started = db.Column(db.Boolean, default=False)
     
-    # post_update=True evita conflitti di foreign key circolare
+    # post_update=True avoids the circular foreign key between users and lobbies
     host = db.relationship('User', foreign_keys=[host_id], post_update=True)
     players = db.relationship('User', foreign_keys=[User.lobby_id], backref='current_lobby_obj', lazy=True)

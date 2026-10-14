@@ -24,7 +24,7 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
 
 .center-top-hud {
     position:absolute;
-    top:85px;   /* prima era 20px */
+    top:85px;
     left:50%;
     transform:translateX(-50%);
     text-align:center;
@@ -79,16 +79,16 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
     to { transform: translate(-50%, -50%) scale(1.1); }
 }
 
-/* Assicurati che l'overlay di caricamento sia sopra tutto */
+/* Loading overlay must sit above everything else */
 #loading-overlay {
     position:fixed; top:0; left:0; width:100%; height:100%;
     background:#000; display:flex; justify-content:center; align-items:center;
-    color:#39ff14; z-index:2000; /* Più alto del countdown */
+    color:#39ff14; z-index:2000; /* above the countdown */
     font-family: 'Orbitron', sans-serif;
 }
 </style>
 
-<div id="loading-overlay">CARICAMENTO ASSET...</div>
+<div id="loading-overlay">LOADING ASSETS...</div>
 <div id="countdown">3</div>
 
 
@@ -107,7 +107,7 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
     <div class="center-top-hud">
         <div class="mini-label">POSITION</div>
         <div id="position-label">WAITING...</div>
-        <div id="lap-label">LAP 0 / {{ track_data.laps }}</div>
+        <div id="lap-label">LAP 1 / {{ track_data.laps }}</div>
     </div>
 
     <!-- CAR STATS -->
@@ -137,42 +137,38 @@ body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; back
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
 <script>
-    const TRACK_JSON = "{{ track_json_path }}";
-    const CURRENT_USER_ID = "{{ current_user.id }}";
-    const LOBBY_CODE = "{{ lobby.code }}";
-    const LOBBY_HOST_ID = "{{ lobby_host_id }}";
-    const PRACTICE_MODE = "{{ 'true' if practice_mode else 'false' }}";
-    window.PRACTICE_MODE = PRACTICE_MODE === "true";
-    const isHost = CURRENT_USER_ID === "{{ lobby_host_id }}";
+    const TRACK_JSON = {{ track_json_path | tojson }};
 </script>
-
 
 <script type="module">
     import { initGame } from '/static/js/race.js';
 
-    const socket = io();
+    const practiceMode = {{ 'true' if practice_mode else 'false' }};
+    const lobbyCode = {{ (lobby.code if lobby else '') | tojson }};
 
-    // Join stanza lobby
-    socket.on("connect", () => {
-        socket.emit("join_lobby", { code: LOBBY_CODE });
-    });
+    // Reuse the socket opened in base.html and join the lobby room
+    // (again on every reconnect, so the server keeps us in the race)
+    if (!practiceMode) {
+        const joinLobby = () => socket.emit("join_lobby", { code: lobbyCode });
+        socket.on("connect", joinLobby);
+        if (socket.connected) joinLobby();
+    }
 
     initGame({
         socket: socket,
-        username: "{{ current_user.username }}",
-        userId: CURRENT_USER_ID,
-        lobbyHostId: LOBBY_HOST_ID,
-        lobbyCode: LOBBY_CODE,
+        userId: {{ current_user.id }},
+        lobbyHostId: {{ lobby_host_id | tojson }},
+        lobbyCode: lobbyCode,
+        practiceMode: practiceMode,
         stats: {
-            speed: parseFloat("{{ user_car.car.speed }}") || 50,
-            accel: parseFloat("{{ user_car.car.accel }}") || 50,
-            handling: parseFloat("{{ user_car.car.handling }}") || 50
+            speed: {{ user_car.car.speed or 50 }},
+            accel: {{ user_car.car.accel or 50 }},
+            handling: {{ user_car.car.handling or 50 }}
         },
         modelPath: "/static/models/{{ user_car.car.model_path }}",
-        carColor: "{{ user_car.color }}" || "#39ff14"
+        carColor: {{ (user_car.color or '#39ff14') | tojson }}
     });
 </script>
 

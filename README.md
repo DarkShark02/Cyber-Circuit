@@ -97,6 +97,17 @@ static/models/       Car models (.glb)
 - **Frontend:** Three.js, Cannon.js, Socket.IO client
 - **Desktop:** pywebview, PyInstaller
 
+## Known issues
+
+This is an unfinished hobby project, and it still has quite a few bugs. For example:
+
+- Car physics can be glitchy: cars may bounce, get stuck on walls or behave oddly after collisions
+- Multiplayer sync isn't perfect, so other cars can stutter or jump around
+- Bots follow a fixed line on the track and don't really react to other cars
+- Some car models look slightly off (wrong colours, leftover parts)
+
+Expect a fun prototype, not a polished game. Bug reports and pull requests are welcome!
+
 ## Credits
 
 The 3D car models in `static/models/` are third‑party assets and belong to their original authors.
